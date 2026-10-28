@@ -1,0 +1,374 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS (PostgreSQL Types)
+// ==========================================
+
+enum ContentStatus {
+  DRAFT     @map("draft")
+  PUBLISHED @map("published")
+  ARCHIVED  @map("archived")
+
+  @@map("content_status")
+}
+
+enum VisibilityType {
+  PUBLIC     @map("public")
+  CLASS_ONLY @map("class_only")
+
+  @@map("visibility_type")
+}
+
+enum ModuleStatus {
+  DRAFT    @map("draft")
+  ACTIVE   @map("active")
+  DISABLED @map("disabled")
+
+  @@map("module_status")
+}
+
+enum AssetKind {
+  IMAGE    @map("image")
+  AUDIO    @map("audio")
+  SCRIPT   @map("script")
+  BUNDLE   @map("bundle")
+  DOCUMENT @map("document")
+
+  @@map("asset_kind")
+}
+
+enum DifficultyType {
+  EASY   @map("easy")
+  MEDIUM @map("medium")
+  HARD   @map("hard")
+
+  @@map("difficulty_type")
+}
+
+enum BloomLevel {
+  REMEMBER   @map("remember")
+  UNDERSTAND @map("understand")
+  APPLY      @map("apply")
+  ANALYZE    @map("analyze")
+  EVALUATE   @map("evaluate")
+  CREATE     @map("create")
+
+  @@map("bloom_level")
+}
+
+enum HintType {
+  PSEUDOCODE @map("pseudocode")
+  CLOZE_CODE @map("cloze_code")
+  FULL_CODE  @map("full_code")
+
+  @@map("hint_type")
+}
+
+enum ChallengeType {
+  STREAK           @map("streak")
+  TOTAL_EXP        @map("total_exp")
+  TEST_COUNT       @map("test_count")
+  TOPIC_COMPLETION @map("topic_completion")
+
+  @@map("challenge_type")
+}
+
+enum TierType {
+  BRONZE @map("bronze")
+  SILVER @map("silver")
+  GOLD   @map("gold")
+
+  @@map("tier_type")
+}
+
+// ==========================================
+// DOMAIN 2: KURIKULUM & KONTEN BELAJAR
+// ==========================================
+
+model EducationLevel {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique @db.VarChar(50)
+  name       String      @db.VarChar(100)
+  subjects   Subject[]
+  challenges Challenge[]
+
+  @@map("education_level")
+}
+
+model Subject {
+  id               String         @id @default(uuid()) @db.Uuid
+  educationLevelId String         @map("education_level_id") @db.Uuid
+  name             String         @db.VarChar(150)
+  educationLevel   EducationLevel @relation(fields: [educationLevelId], references: [id], onDelete: Cascade)
+  topics           Topic[]
+
+  @@map("subject")
+}
+
+model Topic {
+  id           String         @id @default(uuid()) @db.Uuid
+  subjectId    String         @map("subject_id") @db.Uuid
+  number       Int
+  title        String         @db.VarChar(200)
+  description  String?        @db.Text
+  coverAssetId String?        @map("cover_asset_id") @db.Uuid
+  visibility   VisibilityType @default(PUBLIC)
+  status       ContentStatus  @default(DRAFT)
+  createdBy    String?        @map("created_by") @db.Uuid
+  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  coverAsset Asset?     @relation("TopicCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  materials  Material[]
+
+  @@map("topic")
+}
+
+model Material {
+  id              String        @id @default(uuid()) @db.Uuid
+  topicId         String        @map("topic_id") @db.Uuid
+  number          Int
+  title           String        @db.VarChar(200)
+  description     String?       @db.Text
+  learningOutcome String?       @map("learning_outcome") @db.Text
+  content         String        @db.Text
+  summary         String?       @db.Text
+  coverAssetId    String?       @map("cover_asset_id") @db.Uuid
+  status          ContentStatus @default(DRAFT)
+  createdBy       String?       @map("created_by") @db.Uuid
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  topic      Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  coverAsset Asset?  @relation("MaterialCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  tests      Test[]
+
+  @@map("material")
+}
+
+// ==========================================
+// DOMAIN 3: ASSET & GAME MODULE
+// ==========================================
+
+model Asset {
+  id          String    @id @default(uuid()) @db.Uuid
+  kind        AssetKind
+  storagePath String    @map("storage_path") @db.Text
+  mimeType    String    @map("mime_type") @db.VarChar(100)
+  sizeBytes   BigInt    @map("size_bytes")
+  sha256      String    @unique @db.Char(64)
+  uploadedBy  String?   @map("uploaded_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  topicCovers    Topic[]          @relation("TopicCoverAsset")
+  materialCovers Material[]       @relation("MaterialCoverAsset")
+  moduleFiles    GameModuleFile[]
+  badgeIcons     Badge[]          @relation("BadgeIconAsset")
+
+  @@map("asset")
+}
+
+model TemplateType {
+  id           String       @id @default(uuid()) @db.Uuid
+  code         String       @unique @db.VarChar(50)
+  name         String       @db.VarChar(100)
+  configSchema Json?        @map("config_schema")
+  isActive     Boolean      @default(true) @map("is_active")
+  modules      GameModule[]
+
+  @@map("template_type")
+}
+
+model GameModule {
+  id             String        @id @default(uuid()) @db.Uuid
+  key            String        @unique @db.VarChar(100)
+  name           String        @db.VarChar(150)
+  description    String?       @db.Text
+  kind           String        @default("template") @db.VarChar(50)
+  templateTypeId String?       @map("template_type_id") @db.Uuid
+  status         ModuleStatus  @default(DRAFT)
+  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  templateType TemplateType?       @relation(fields: [templateTypeId], references: [id], onDelete: SetNull)
+  versions     GameModuleVersion[]
+
+  @@map("game_module")
+}
+
+model GameModuleVersion {
+  id             String   @id @default(uuid()) @db.Uuid
+  gameModuleId   String   @map("game_module_id") @db.Uuid
+  version        String   @db.VarChar(50)
+  checksumSha256 String?  @map("checksum_sha256") @db.Char(64)
+  configSchema   Json?    @map("config_schema")
+  sandboxPolicy  Json?    @map("sandbox_policy")
+  manifest       Json?
+  config         Json?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  gameModule GameModule       @relation(fields: [gameModuleId], references: [id], onDelete: Cascade)
+  files      GameModuleFile[]
+  tests      Test[]
+  challenges Challenge[]
+
+  @@unique([gameModuleId, version])
+  @@map("game_module_version")
+}
+
+model GameModuleFile {
+  id                  String   @id @default(uuid()) @db.Uuid
+  gameModuleVersionId String   @map("game_module_version_id") @db.Uuid
+  assetId             String   @map("asset_id") @db.Uuid
+  relativePath        String   @map("relative_path") @db.Text
+  isEntrypoint        Boolean  @default(false) @map("is_entrypoint")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  gameModuleVersion GameModuleVersion @relation(fields: [gameModuleVersionId], references: [id], onDelete: Cascade)
+  asset             Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([gameModuleVersionId, relativePath])
+  @@map("game_module_file")
+}
+
+// ==========================================
+// DOMAIN 4: SOAL, HINT, TEST CASE, RUBRIK
+// ==========================================
+
+model Test {
+  id                  String         @id @default(uuid()) @db.Uuid
+  materialId          String         @map("material_id") @db.Uuid
+  gameModuleVersionId String?        @map("game_module_version_id") @db.Uuid
+  rubricId            String?        @map("rubric_id") @db.Uuid
+  createdBy           String?        @map("created_by") @db.Uuid
+  number              Int
+  title               String         @db.VarChar(200)
+  questionType        String         @map("question_type") @db.VarChar(50)
+  prompt              String         @db.Text
+  points              Int            @default(10)
+  difficulty          DifficultyType @default(MEDIUM)
+  bloomLevel          BloomLevel     @default(REMEMBER) @map("bloom_level")
+  maxAttempts         Int?           @map("max_attempts")
+  payload             Json?
+  answerKey           Json?          @map("answer_key")
+  status              ContentStatus  @default(DRAFT)
+  deletedAt           DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  material          Material           @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  gameModuleVersion GameModuleVersion? @relation(fields: [gameModuleVersionId], references: [id], onDelete: SetNull)
+  rubric            Rubric?            @relation(fields: [rubricId], references: [id], onDelete: SetNull)
+  hints             Hint[]
+  testCases         TestCase[]
+
+  @@map("test")
+}
+
+model Hint {
+  id      String   @id @default(uuid()) @db.Uuid
+  testId  String   @map("test_id") @db.Uuid
+  level   Int      @db.SmallInt
+  type    HintType
+  content String   @db.Text
+
+  test Test @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@map("hint")
+}
+
+model TestCase {
+  id             String  @id @default(uuid()) @db.Uuid
+  testId         String  @map("test_id") @db.Uuid
+  input          String  @db.Text
+  expectedOutput String  @map("expected_output") @db.Text
+  weight         Int     @default(1)
+  isHidden       Boolean @default(false) @map("is_hidden")
+
+  test Test @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@map("test_case")
+}
+
+model Rubric {
+  id          String  @id @default(uuid()) @db.Uuid
+  title       String  @db.VarChar(150)
+  description String? @db.Text
+  prompt      String? @db.Text
+  maxScore    Int     @map("max_score")
+  tests       Test[]
+
+  @@map("rubric")
+}
+
+// ==========================================
+// DOMAIN 6 (KATALOG): CHALLENGE & BADGE
+// ==========================================
+
+model Challenge {
+  id                  String        @id @default(uuid()) @db.Uuid
+  code                String        @unique @db.VarChar(100)
+  type                ChallengeType
+  educationLevelId    String?       @map("education_level_id") @db.Uuid
+  menu                String?       @db.VarChar(50)
+  period              String?       @db.VarChar(50)
+  rule                Json?
+  payload             Json?
+  gameModuleVersionId String?       @map("game_module_version_id") @db.Uuid
+  maxScore            Int?          @map("max_score")
+  title               String        @db.VarChar(200)
+  description         String?       @db.Text
+  isActive            Boolean       @default(true) @map("is_active")
+  startsAt            DateTime?     @map("starts_at") @db.Timestamptz
+  endsAt              DateTime?     @map("ends_at") @db.Timestamptz
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  educationLevel    EducationLevel?    @relation(fields: [educationLevelId], references: [id], onDelete: SetNull)
+  gameModuleVersion GameModuleVersion? @relation(fields: [gameModuleVersionId], references: [id], onDelete: SetNull)
+  tiers             ChallengeTier[]
+
+  @@map("challenge")
+}
+
+model ChallengeTier {
+  id          String   @id @default(uuid()) @db.Uuid
+  challengeId String   @map("challenge_id") @db.Uuid
+  tier        TierType
+  threshold   Int
+  rewardExp   Int      @map("reward_exp")
+  badgeId     String?  @map("badge_id") @db.Uuid
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  badge     Badge?    @relation(fields: [badgeId], references: [id], onDelete: SetNull)
+
+  @@map("challenge_tier")
+}
+
+model Badge {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique @db.VarChar(100)
+  name        String   @db.VarChar(150)
+  description String?  @db.Text
+  criteria    Json?
+  targetValue Int?     @map("target_value")
+  iconAssetId String?  @map("icon_asset_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  iconAsset      Asset?          @relation("BadgeIconAsset", fields: [iconAssetId], references: [id], onDelete: SetNull)
+  challengeTiers ChallengeTier[]
+
+  @@map("badge")
+}
+
