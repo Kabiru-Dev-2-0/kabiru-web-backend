@@ -2,7 +2,7 @@
   "name": "kabiru-backend-microservices",
   "private": true,
   "packageManager": "bun@1.2.0",
-  "workspaces": ["apps/*"],
+  "workspaces": ["packages/*", "apps/*"],
   "scripts": {
     "dev:gateway": "bun run --cwd apps/api-gateway start:dev",
     "dev:auth": "bun run --cwd apps/auth-service start:dev",
@@ -10,6 +10,7 @@
     "dev:learning": "bun run --cwd apps/learning-service start:dev",
     "dev:progress": "bun run --cwd apps/progress-service start:dev",
     "dev:ai": "bun run --cwd apps/ai-service start:dev",
-    "build:all": "bun run --filter '*' build"
+    "build:contracts": "bun run --cwd packages/contracts build",
+    "build:all": "bun run --cwd packages/contracts build && bun run --filter '*' build"
   }
 }
