@@ -25,24 +25,28 @@ export const QuestionTypeSchema = z.enum([
   'maze_runner',
 ]);
 
-export const ListCurriculumQuerySchema = z.object({
+// Query: GET /learning/subjects?level=SMA&search=...
+export const ListSubjectsQuerySchema = z.object({
   level: z.enum(EDUCATION_LEVEL_CODES).default('SMA'),
-  status: ContentStatusSchema.optional(),
   search: z.string().trim().max(100, 'Pencarian maksimal 100 karakter').optional(),
 });
 
+// Query: GET /learning/topics?level=SMA&subjectId=...&status=...&search=...&page=1&limit=20
 export const ListTopicsQuerySchema = z.object({
-  subjectId: UuidSchema,
+  level: z.enum(EDUCATION_LEVEL_CODES).default('SMA'),
+  subjectId: UuidSchema.optional(),
   status: ContentStatusSchema.optional(),
+  search: z.string().trim().max(100, 'Pencarian maksimal 100 karakter').optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+// Query: GET /learning/materials?topicId=...&status=...&page=1&limit=50
 export const ListMaterialsQuerySchema = z.object({
   topicId: UuidSchema,
   status: ContentStatusSchema.optional(),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const CreateSubjectSchema = z.object({
@@ -105,7 +109,7 @@ export const TestAnswerKeySchema = z
     message: 'Ukuran JSONB answer_key melebihi batas 32 KB',
   });
 
-export type ListCurriculumQueryDto = z.infer<typeof ListCurriculumQuerySchema>;
+export type ListSubjectsQueryDto = z.infer<typeof ListSubjectsQuerySchema>;
 export type ListTopicsQueryDto = z.infer<typeof ListTopicsQuerySchema>;
 export type ListMaterialsQueryDto = z.infer<typeof ListMaterialsQuerySchema>;
 export type CreateSubjectDto = z.infer<typeof CreateSubjectSchema>;
