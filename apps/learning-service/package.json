@@ -5,10 +5,14 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start:prod": "bun run dist/main.js",
+    "test": "bun test",
+    "smoke:tcp": "bun run scripts/smoke-tcp.ts",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "bun run prisma/seed.ts"
   },
   "dependencies": {
+    "@kabiru/contracts": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/microservices": "^11.0.0",
