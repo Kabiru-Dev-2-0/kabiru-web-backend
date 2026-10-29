@@ -1,12 +1,11 @@
 export const LEARNING_PATTERNS = {
   HEALTH_CHECK: 'learning.health.check',
 
-  // Public / Student & Teacher Read (Belajar & Detail Belajar)
+  // Public / Student & Teacher Read (Eksplorasi, Detail Eksplorasi, Belajar/Duolingo, Detail Materi)
   EDUCATION_LEVEL_LIST: 'learning.educationLevel.list',
-  CURRICULUM_LIST: 'learning.curriculum.list',
   SUBJECT_LIST: 'learning.subject.list',
-  TOPIC_LIST_BY_SUBJECT: 'learning.topic.listBySubject',
-  MATERIAL_LIST_BY_TOPIC: 'learning.material.listByTopic',
+  TOPIC_LIST: 'learning.topic.list',
+  MATERIAL_LIST: 'learning.material.list',
   MATERIAL_GET_DETAIL: 'learning.material.getDetail',
 
   // Authoring CRUD (Teacher, Admin, Developer)

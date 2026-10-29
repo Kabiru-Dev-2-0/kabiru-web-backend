@@ -22,7 +22,37 @@ export interface AssetSummaryDto {
   sizeBytes: number;
 }
 
-export interface MaterialCardDto {
+// 1. GET /learning/education-levels
+export interface EducationLevelItemDto {
+  id: string;
+  code: EducationLevelCode;
+  name: string;
+}
+
+// 2. GET /learning/subjects?level=SMA (Page Eksplorasi)
+export interface SubjectItemDto {
+  id: string;
+  educationLevelId: string;
+  educationLevelCode: EducationLevelCode;
+  name: string;
+  publishedTopicCount: number;
+}
+
+// 3. GET /learning/topics?level=SMA&subjectId=... (Page Detail Eksplorasi & Page Belajar)
+export interface TopicItemDto {
+  id: string;
+  subjectId: string;
+  subjectName: string;
+  number: number;
+  title: string;
+  description: string | null;
+  coverAsset: AssetSummaryDto | null;
+  status: ContentStatusDto;
+  publishedMaterialCount: number;
+}
+
+// 4. GET /learning/materials?topicId=... (Page Belajar / Jalur Duolingo)
+export interface MaterialListItemDto {
   id: string;
   topicId: string;
   number: number;
@@ -34,30 +64,6 @@ export interface MaterialCardDto {
   status: ContentStatusDto;
   publishedTestCount: number;
   updatedAt: string;
-}
-
-export interface TopicWithMaterialsDto {
-  id: string;
-  subjectId: string;
-  number: number;
-  title: string;
-  description: string | null;
-  coverAsset: AssetSummaryDto | null;
-  status: ContentStatusDto;
-  materials: MaterialCardDto[];
-}
-
-export interface CurriculumSubjectTreeDto {
-  educationLevel: {
-    id: string;
-    code: EducationLevelCode;
-    name: string;
-  };
-  subjects: Array<{
-    id: string;
-    name: string;
-    topics: TopicWithMaterialsDto[];
-  }>;
 }
 
 export interface PublicTestCaseDto {
@@ -81,6 +87,7 @@ export interface TestPublicItemDto {
   sampleTestCases: PublicTestCaseDto[];
 }
 
+// 5. GET /learning/materials/:materialId (Detail Belajar & Daftar Soal Aman)
 export interface MaterialDetailDto {
   id: string;
   number: number;
