@@ -4,7 +4,6 @@
   "packageManager": "bun@1.2.0",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "start:dev": "bun run build:contracts && bun run --filter '*' --if-present --parallel start:dev",
     "dev:gateway": "bun run --cwd apps/api-gateway start:dev",
     "dev:auth": "bun run --cwd apps/auth-service start:dev",
     "dev:users": "bun run --cwd apps/user-service start:dev",
@@ -13,5 +12,13 @@
     "dev:ai": "bun run --cwd apps/ai-service start:dev",
     "build:contracts": "bun run --cwd packages/contracts build",
     "build:all": "bun run --cwd packages/contracts build && bun run --filter '*' build"
+  },
+  "dependencies": {
+    "@nestjs/mapped-types": "^12.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
   }
 }
