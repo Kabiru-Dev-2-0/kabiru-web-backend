@@ -1,12 +1,24 @@
-import { AssetKind, ContentStatus, type Asset } from '@prisma/client';
+import {
+  AssetKind,
+  BloomLevel,
+  ContentStatus,
+  DifficultyType,
+  type Asset,
+  type Prisma,
+} from '@prisma/client';
 import type {
   AssetKindDto,
   AssetSummaryDto,
+  BloomLevelDto,
   ContentStatusDto,
+  DifficultyTypeDto,
   EducationLevelCode,
   EducationLevelItemDto,
+  MaterialDetailDto,
   MaterialListItemDto,
+  QuestionTypeDto,
   SubjectItemDto,
+  TestPublicItemDto,
   TopicItemDto,
 } from '@kabiru/contracts';
 
@@ -31,6 +43,55 @@ const ASSET_KIND_TO_DTO: Record<AssetKind, AssetKindDto> = {
   [AssetKind.BUNDLE]: 'bundle',
   [AssetKind.DOCUMENT]: 'document',
 };
+
+const DIFFICULTY_TO_DTO: Record<DifficultyType, DifficultyTypeDto> = {
+  [DifficultyType.EASY]: 'easy',
+  [DifficultyType.MEDIUM]: 'medium',
+  [DifficultyType.HARD]: 'hard',
+};
+
+const BLOOM_LEVEL_TO_DTO: Record<BloomLevel, BloomLevelDto> = {
+  [BloomLevel.REMEMBER]: 'remember',
+  [BloomLevel.UNDERSTAND]: 'understand',
+  [BloomLevel.APPLY]: 'apply',
+  [BloomLevel.ANALYZE]: 'analyze',
+  [BloomLevel.EVALUATE]: 'evaluate',
+  [BloomLevel.CREATE]: 'create',
+};
+
+const FORBIDDEN_PUBLIC_KEYS = new Set([
+  'answer',
+  'answer_key',
+  'answerKey',
+  'correctOptionId',
+  'isCorrect',
+  'expectedOutput',
+]);
+
+function stripForbiddenKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripForbiddenKeys);
+  }
+  if (typeof value === 'object' && value !== null) {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      if (!FORBIDDEN_PUBLIC_KEYS.has(key)) {
+        cleaned[key] = stripForbiddenKeys(val);
+      }
+    }
+    return cleaned;
+  }
+  return value;
+}
+
+export function sanitizePublicPayload(
+  payload: Prisma.JsonValue | null,
+): Record<string, unknown> | null {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    return null;
+  }
+  return stripForbiddenKeys(payload) as Record<string, unknown>;
+}
 
 export function toContentStatusDto(status: ContentStatus): ContentStatusDto {
   return CONTENT_STATUS_TO_DTO[status];
@@ -127,6 +188,102 @@ export function toMaterialListItemDto(row: {
     coverAsset: toAssetSummaryDto(row.coverAsset),
     status: toContentStatusDto(row.status),
     publishedTestCount: row._count.tests,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export interface TestPublicRow {
+  id: string;
+  number: number;
+  title: string;
+  questionType: string;
+  prompt: string;
+  points: number;
+  difficulty: DifficultyType;
+  bloomLevel: BloomLevel;
+  maxAttempts: number | null;
+  gameModuleVersionId: string | null;
+  payload: Prisma.JsonValue | null;
+  testCases: Array<{
+    id: string;
+    input: string;
+    expectedOutput: string;
+  }>;
+}
+
+export interface MaterialDetailRow {
+  id: string;
+  number: number;
+  title: string;
+  description: string | null;
+  learningOutcome: string | null;
+  content: string;
+  summary: string | null;
+  status: ContentStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  coverAsset: AssetRow | null;
+  topic: {
+    id: string;
+    number: number;
+    title: string;
+    subject: {
+      id: string;
+      name: string;
+      educationLevel: {
+        code: string;
+      };
+    };
+  };
+  tests: TestPublicRow[];
+}
+
+export function toTestPublicItemDto(row: TestPublicRow): TestPublicItemDto {
+  return {
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    questionType: row.questionType as QuestionTypeDto,
+    prompt: row.prompt,
+    points: row.points,
+    difficulty: DIFFICULTY_TO_DTO[row.difficulty],
+    bloomLevel: BLOOM_LEVEL_TO_DTO[row.bloomLevel],
+    maxAttempts: row.maxAttempts,
+    gameModuleVersionId: row.gameModuleVersionId,
+    payload: sanitizePublicPayload(row.payload),
+    sampleTestCases: row.testCases.map((tc) => ({
+      id: tc.id,
+      input: tc.input,
+      expectedOutput: tc.expectedOutput,
+    })),
+  };
+}
+
+export function toMaterialDetailDto(
+  row: MaterialDetailRow,
+  navigation: { previousMaterialId: string | null; nextMaterialId: string | null },
+): MaterialDetailDto {
+  return {
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    description: row.description,
+    learningOutcome: row.learningOutcome,
+    content: row.content,
+    summary: row.summary,
+    coverAsset: toAssetSummaryDto(row.coverAsset),
+    status: toContentStatusDto(row.status),
+    breadcrumb: {
+      educationLevelCode: row.topic.subject.educationLevel.code,
+      subjectId: row.topic.subject.id,
+      subjectName: row.topic.subject.name,
+      topicId: row.topic.id,
+      topicNumber: row.topic.number,
+      topicTitle: row.topic.title,
+    },
+    navigation,
+    tests: row.tests.map(toTestPublicItemDto),
+    createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }

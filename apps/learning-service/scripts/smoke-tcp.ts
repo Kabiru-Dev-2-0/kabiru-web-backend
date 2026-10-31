@@ -4,9 +4,11 @@ import { ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import {
   LEARNING_PATTERNS,
+  isServiceErrorPayload,
   type ActorContext,
   type EducationLevelItemDto,
   type InternalRequest,
+  type MaterialDetailDto,
   type MaterialListItemDto,
   type PaginationMeta,
   type SubjectItemDto,
@@ -107,6 +109,47 @@ async function runSmokeTest() {
       '5. MATERIAL_LIST (jalur belajar Duolingo student) OK:',
       studentMaterials.items.map((m) => `#${m.number} ${m.title}`),
     );
+
+    const materialDetail = await firstValueFrom(
+      client.send<MaterialDetailDto>(
+        LEARNING_PATTERNS.MATERIAL_GET_DETAIL,
+        makeEnvelope({ materialId: SEED_IDS.materialPub1 }, studentActor),
+      ),
+    );
+    assert.equal(materialDetail.id, SEED_IDS.materialPub1);
+    assert.equal(materialDetail.breadcrumb.educationLevelCode, 'SMA');
+    assert.equal(materialDetail.navigation.previousMaterialId, null);
+    assert.equal(materialDetail.navigation.nextMaterialId, SEED_IDS.materialPub2);
+    assert.equal(materialDetail.tests.length, 1);
+    const publicTest = materialDetail.tests[0];
+    assert.ok(publicTest);
+    assert.equal('answerKey' in publicTest, false);
+    assert.equal(publicTest.sampleTestCases.length, 1);
+    assert.equal(publicTest.sampleTestCases[0]?.id, SEED_IDS.testCasePubSample);
+    console.log('6. MATERIAL_GET_DETAIL (student soal aman & navigasi) OK:', {
+      title: materialDetail.title,
+      nextMaterialId: materialDetail.navigation.nextMaterialId,
+      tests: materialDetail.tests.map(
+        (t) => `#${t.number} ${t.title} (sampleTestCases=${t.sampleTestCases.length})`,
+      ),
+    });
+
+    await assert.rejects(
+      () =>
+        firstValueFrom(
+          client.send<MaterialDetailDto>(
+            LEARNING_PATTERNS.MATERIAL_GET_DETAIL,
+            makeEnvelope({ materialId: SEED_IDS.materialDraft3 }, studentActor),
+          ),
+        ),
+      (err: unknown) => {
+        assert.ok(isServiceErrorPayload(err));
+        assert.equal(err.code, 'NOT_FOUND');
+        assert.equal(err.httpStatus, 404);
+        return true;
+      },
+    );
+    console.log('7. MATERIAL_GET_DETAIL (student blokir akses materi draft -> 404) OK');
 
     console.log('\nSEMUA SMOKE TEST TCP KE POSTGRESQL LULUS!');
   } finally {

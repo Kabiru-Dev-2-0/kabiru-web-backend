@@ -6,9 +6,11 @@ import {
   createServiceError,
   type ActorContext,
   type EducationLevelItemDto,
+  type GetMaterialDetailParamsDto,
   type ListMaterialsQueryDto,
   type ListSubjectsQueryDto,
   type ListTopicsQueryDto,
+  type MaterialDetailDto,
   type MaterialListItemDto,
   type PaginationMeta,
   type SubjectItemDto,
@@ -19,6 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   toContentStatusPrisma,
   toEducationLevelItemDto,
+  toMaterialDetailDto,
   toMaterialListItemDto,
   toSubjectItemDto,
   toTopicItemDto,
@@ -226,5 +229,119 @@ export class CurriculumService {
         totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / query.limit),
       },
     };
+  }
+
+  async getMaterialDetail(
+    params: GetMaterialDetailParamsDto,
+    actor: ActorContext | null,
+  ): Promise<MaterialDetailDto> {
+    const isAuthor = canAccessUnpublishedContent(actor);
+
+    const material = await this.prisma.material.findFirst({
+      where: {
+        id: params.materialId,
+        deletedAt: null,
+        ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+        topic: {
+          deletedAt: null,
+          ...(!isAuthor
+            ? {
+                status: ContentStatus.PUBLISHED,
+                visibility: VisibilityType.PUBLIC,
+              }
+            : {}),
+        },
+      },
+      select: {
+        id: true,
+        topicId: true,
+        number: true,
+        title: true,
+        description: true,
+        learningOutcome: true,
+        content: true,
+        summary: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        coverAsset: true,
+        topic: {
+          select: {
+            id: true,
+            number: true,
+            title: true,
+            subject: {
+              select: {
+                id: true,
+                name: true,
+                educationLevel: {
+                  select: { code: true },
+                },
+              },
+            },
+          },
+        },
+        tests: {
+          where: {
+            deletedAt: null,
+            ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+          },
+          orderBy: [{ number: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            number: true,
+            title: true,
+            questionType: true,
+            prompt: true,
+            points: true,
+            difficulty: true,
+            bloomLevel: true,
+            maxAttempts: true,
+            gameModuleVersionId: true,
+            payload: true,
+            testCases: {
+              where: { isHidden: false },
+              orderBy: { id: 'asc' },
+              select: {
+                id: true,
+                input: true,
+                expectedOutput: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!material) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Materi tidak ditemukan atau belum dipublikasikan',
+        }),
+      );
+    }
+
+    const siblings = await this.prisma.material.findMany({
+      where: {
+        topicId: material.topicId,
+        deletedAt: null,
+        ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+      },
+      orderBy: [{ number: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+
+    const currentIndex = siblings.findIndex((item) => item.id === material.id);
+    const navigation = {
+      previousMaterialId: currentIndex > 0 ? (siblings[currentIndex - 1]?.id ?? null) : null,
+      nextMaterialId:
+        currentIndex >= 0 && currentIndex < siblings.length - 1
+          ? (siblings[currentIndex + 1]?.id ?? null)
+          : null,
+    };
+
+    return toMaterialDetailDto(material, navigation);
   }
 }

@@ -1,11 +1,13 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import {
+  GetMaterialDetailParamsSchema,
   LEARNING_PATTERNS,
   ListMaterialsQuerySchema,
   ListSubjectsQuerySchema,
   ListTopicsQuerySchema,
   type EducationLevelItemDto,
+  type MaterialDetailDto,
   type MaterialListItemDto,
   type SubjectItemDto,
   type TopicItemDto,
@@ -42,5 +44,12 @@ export class CurriculumController {
     const query = validateRpcData(ListMaterialsQuerySchema, payload);
     const actor = extractActor(payload);
     return this.curriculumService.listMaterials(query, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.MATERIAL_GET_DETAIL)
+  getMaterialDetail(@Payload() payload: unknown): Promise<MaterialDetailDto> {
+    const params = validateRpcData(GetMaterialDetailParamsSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.getMaterialDetail(params, actor);
   }
 }

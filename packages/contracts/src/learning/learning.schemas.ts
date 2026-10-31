@@ -49,6 +49,11 @@ export const ListMaterialsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+// Params: GET /learning/materials/:materialId
+export const GetMaterialDetailParamsSchema = z.object({
+  materialId: UuidSchema,
+});
+
 export const CreateSubjectSchema = z.object({
   educationLevelCode: z.enum(EDUCATION_LEVEL_CODES),
   name: z.string().trim().min(2, 'Nama mata pelajaran minimal 2 karakter').max(150),
@@ -112,6 +117,7 @@ export const TestAnswerKeySchema = z
 export type ListSubjectsQueryDto = z.infer<typeof ListSubjectsQuerySchema>;
 export type ListTopicsQueryDto = z.infer<typeof ListTopicsQuerySchema>;
 export type ListMaterialsQueryDto = z.infer<typeof ListMaterialsQuerySchema>;
+export type GetMaterialDetailParamsDto = z.infer<typeof GetMaterialDetailParamsSchema>;
 export type CreateSubjectDto = z.infer<typeof CreateSubjectSchema>;
 export type UpdateSubjectDto = z.infer<typeof UpdateSubjectSchema>;
 export type CreateTopicDto = z.infer<typeof CreateTopicSchema>;

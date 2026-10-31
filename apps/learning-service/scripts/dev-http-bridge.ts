@@ -79,6 +79,28 @@ const ROUTE_MAP: Readonly<Record<string, string>> = {
   'GET /learning/materials': LEARNING_PATTERNS.MATERIAL_LIST,
 };
 
+function matchRoute(
+  method: string,
+  pathname: string,
+): { pattern: string; params: Record<string, string> } | null {
+  const staticPattern = ROUTE_MAP[`${method} ${pathname}`];
+  if (staticPattern) {
+    return { pattern: staticPattern, params: {} };
+  }
+
+  if (method === 'GET') {
+    const materialMatch = /^\/learning\/materials\/([^/]+)$/.exec(pathname);
+    if (materialMatch?.[1]) {
+      return {
+        pattern: LEARNING_PATTERNS.MATERIAL_GET_DETAIL,
+        params: { materialId: decodeURIComponent(materialMatch[1]) },
+      };
+    }
+  }
+
+  return null;
+}
+
 const bridgePort = Number(process.env.DEV_BRIDGE_PORT ?? 3099);
 const tcpPort = Number(process.env.SERVICE_PORT ?? 4013);
 
@@ -99,10 +121,11 @@ const server = createServer(async (req, res) => {
   }
 
   const parsedUrl = new URL(req.url ?? '/', `http://localhost:${bridgePort}`);
-  const routeKey = `${req.method ?? 'GET'} ${parsedUrl.pathname}`;
-  const pattern = ROUTE_MAP[routeKey];
+  const method = req.method ?? 'GET';
+  const routeKey = `${method} ${parsedUrl.pathname}`;
+  const matched = matchRoute(method, parsedUrl.pathname);
 
-  if (!pattern) {
+  if (!matched) {
     sendJson(res, 404, requestId, {
       error: {
         code: 'NOT_FOUND',
@@ -124,12 +147,12 @@ const server = createServer(async (req, res) => {
       actor: resolveActor(req),
       callerService: 'api-gateway',
     },
-    data: queryData,
+    data: { ...queryData, ...matched.params },
   };
 
   try {
     const result = await firstValueFrom(
-      tcpClient.send<unknown>(pattern, envelope).pipe(timeout(5000)),
+      tcpClient.send<unknown>(matched.pattern, envelope).pipe(timeout(5000)),
     );
 
     if (isPaginatedPayload(result)) {
