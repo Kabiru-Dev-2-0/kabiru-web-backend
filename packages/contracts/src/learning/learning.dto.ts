@@ -151,3 +151,49 @@ export interface TestHintContextInternalDto {
     content: string;
   }>;
 }
+
+export interface TestAuthoringItemDto {
+  id: string;
+  number: number;
+  title: string;
+  questionType: QuestionTypeDto;
+  prompt: string;
+  points: number;
+  difficulty: DifficultyTypeDto;
+  bloomLevel: BloomLevelDto;
+  maxAttempts: number | null;
+  gameModuleVersionId: string | null;
+  payload: Record<string, unknown> | null;
+  answerKey: Record<string, unknown> | null;
+  status: ContentStatusDto;
+  testCases: Array<{
+    id: string;
+    input: string;
+    expectedOutput: string;
+    weight: number;
+    isHidden: boolean;
+  }>;
+}
+
+export interface MaterialAuthoringDetailDto {
+  id: string;
+  topicId: string;
+  number: number;
+  title: string;
+  description: string | null;
+  learningOutcome: string | null;
+  content: string;
+  summary: string | null;
+  coverAsset: AssetSummaryDto | null;
+  status: ContentStatusDto;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  tests: TestAuthoringItemDto[];
+}
+
+export interface MutationResultDto {
+  success: boolean;
+  id: string;
+  message?: string;
+}

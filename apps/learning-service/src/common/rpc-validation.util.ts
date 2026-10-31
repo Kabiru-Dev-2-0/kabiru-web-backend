@@ -52,3 +52,16 @@ export function canAccessUnpublishedContent(actor: ActorContext | null): boolean
   if (!actor) return false;
   return AUTHORING_ROLES.includes(actor.role);
 }
+
+export function assertAuthorRole(actor: ActorContext | null): ActorContext {
+  if (!actor || !AUTHORING_ROLES.includes(actor.role)) {
+    throw new RpcException(
+      createServiceError({
+        code: 'FORBIDDEN',
+        httpStatus: 403,
+        message: 'Operasi ini memerlukan hak akses pengajar atau admin.',
+      }),
+    );
+  }
+  return actor;
+}

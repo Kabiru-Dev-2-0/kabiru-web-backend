@@ -235,4 +235,102 @@ describe('CurriculumService', () => {
       visibility: VisibilityType.PUBLIC,
     });
   });
+
+  // ==========================================
+  // AUTHORING TESTS
+  // ==========================================
+  it('melempar RpcException FORBIDDEN (403) saat student memanggil createTopic', async () => {
+    const prismaMock = {} as unknown as PrismaService;
+    const service = new CurriculumService(prismaMock);
+
+    await assert.rejects(
+      () =>
+        service.createTopic(
+          {
+            subjectId: '11111111-1111-4111-8111-111111111102',
+            number: 3,
+            title: 'Topik Ilegal',
+            status: 'draft',
+          },
+          { userId: 'student-1', role: 'student' },
+        ),
+      (err: unknown) => {
+        assert.ok(err instanceof RpcException);
+        const errorPayload = err.getError() as { code: string; httpStatus: number };
+        assert.equal(errorPayload.code, 'FORBIDDEN');
+        assert.equal(errorPayload.httpStatus, 403);
+        return true;
+      },
+    );
+  });
+
+  it('mengisi createdBy dengan actor.userId saat teacher membuat topik', async () => {
+    let capturedData: any;
+
+    const prismaMock = {
+      subject: {
+        findUnique: async () => ({ id: 'sub-1' }),
+      },
+      topic: {
+        create: async (args: { data: any }) => {
+          capturedData = args.data;
+          return {
+            id: 'top-new',
+            subjectId: 'sub-1',
+            number: 1,
+            title: 'Topik Baru',
+            description: null,
+            coverAssetId: null,
+            status: ContentStatus.DRAFT,
+            subject: { name: 'Informatika' },
+            coverAsset: null,
+            _count: { materials: 0 },
+          };
+        },
+      },
+    } as unknown as PrismaService;
+
+    const service = new CurriculumService(prismaMock);
+    const result = await service.createTopic(
+      {
+        subjectId: '11111111-1111-4111-8111-111111111102',
+        number: 1,
+        title: 'Topik Baru',
+        status: 'draft',
+      },
+      { userId: '00000000-0000-4000-8000-000000000099', role: 'teacher' },
+    );
+
+    assert.equal(capturedData.createdBy, '00000000-0000-4000-8000-000000000099');
+    assert.equal(result.title, 'Topik Baru');
+    assert.equal(result.status, 'draft');
+  });
+
+  it('menolak deleteSubject dengan CONFLICT (409) jika masih ada topik aktif', async () => {
+    const prismaMock = {
+      subject: {
+        findUnique: async () => ({
+          id: 'sub-1',
+          _count: { topics: 2 },
+        }),
+      },
+    } as unknown as PrismaService;
+
+    const service = new CurriculumService(prismaMock);
+
+    await assert.rejects(
+      () =>
+        service.deleteSubject(
+          { subjectId: '11111111-1111-4111-8111-111111111102' },
+          { userId: 'teacher-1', role: 'teacher' },
+        ),
+      (err: unknown) => {
+        assert.ok(err instanceof RpcException);
+        const errorPayload = err.getError() as { code: string; httpStatus: number };
+        assert.equal(errorPayload.code, 'CONFLICT');
+        assert.equal(errorPayload.httpStatus, 409);
+        return true;
+      },
+    );
+  });
 });

@@ -6,10 +6,13 @@ import {
   LEARNING_PATTERNS,
   isServiceErrorPayload,
   type ActorContext,
+  type CreateTopicDto,
   type EducationLevelItemDto,
   type InternalRequest,
+  type MaterialAuthoringDetailDto,
   type MaterialDetailDto,
   type MaterialListItemDto,
+  type MutationResultDto,
   type PaginationMeta,
   type SubjectItemDto,
   type TopicItemDto,
@@ -150,6 +153,83 @@ async function runSmokeTest() {
       },
     );
     console.log('7. MATERIAL_GET_DETAIL (student blokir akses materi draft -> 404) OK');
+
+    // 8. TOPIC_CREATE (student coba buat topik -> 403 FORBIDDEN)
+    await assert.rejects(
+      () =>
+        firstValueFrom(
+          client.send<TopicItemDto>(
+            LEARNING_PATTERNS.TOPIC_CREATE,
+            makeEnvelope<CreateTopicDto>(
+              {
+                subjectId: SEED_IDS.subjectSmaInformatika,
+                number: 99,
+                title: 'Topik Ilegal Student',
+                status: 'draft',
+              },
+              studentActor,
+            ),
+          ),
+        ),
+      (err: unknown) => {
+        assert.ok(isServiceErrorPayload(err));
+        assert.equal(err.code, 'FORBIDDEN');
+        assert.equal(err.httpStatus, 403);
+        return true;
+      },
+    );
+    console.log('8. TOPIC_CREATE (student blokir akses create -> 403) OK');
+
+    // 9. TOPIC_CREATE (teacher buat topik baru -> status draft)
+    const newTopic = await firstValueFrom(
+      client.send<TopicItemDto>(
+        LEARNING_PATTERNS.TOPIC_CREATE,
+        makeEnvelope<CreateTopicDto>(
+          {
+            subjectId: SEED_IDS.subjectSmaInformatika,
+            number: 10,
+            title: 'Topik Smoke Test Teacher',
+            status: 'draft',
+          },
+          teacherActor,
+        ),
+      ),
+    );
+    assert.ok(newTopic.id);
+    assert.equal(newTopic.title, 'Topik Smoke Test Teacher');
+    assert.equal(newTopic.status, 'draft');
+    console.log('9. TOPIC_CREATE (teacher buat topik draft) OK:', newTopic.id);
+
+    // 10. MATERIAL_GET_AUTHORING (teacher ambil detail materi lengkap dengan answerKey)
+    const authoringDetail = await firstValueFrom(
+      client.send<MaterialAuthoringDetailDto>(
+        LEARNING_PATTERNS.MATERIAL_GET_AUTHORING,
+        makeEnvelope({ materialId: SEED_IDS.materialPub1 }, teacherActor),
+      ),
+    );
+    assert.equal(authoringDetail.id, SEED_IDS.materialPub1);
+    assert.ok(authoringDetail.tests.length >= 1);
+    const testWithKey = authoringDetail.tests.find((t) => t.id === SEED_IDS.testPub1);
+    assert.ok(testWithKey);
+    assert.ok(testWithKey.answerKey !== null);
+    assert.equal(testWithKey.testCases.length, 2); // sample + hidden
+    console.log('10. MATERIAL_GET_AUTHORING (teacher lihat answerKey & hidden test case) OK:', {
+      material: authoringDetail.title,
+      totalTests: authoringDetail.tests.length,
+      hasAnswerKey: Boolean(testWithKey.answerKey),
+      totalTestCases: testWithKey.testCases.length,
+    });
+
+    // 11. TOPIC_DELETE (teacher soft delete topik baru)
+    const deleteResult = await firstValueFrom(
+      client.send<MutationResultDto>(
+        LEARNING_PATTERNS.TOPIC_DELETE,
+        makeEnvelope({ topicId: newTopic.id }, teacherActor),
+      ),
+    );
+    assert.equal(deleteResult.success, true);
+    assert.equal(deleteResult.id, newTopic.id);
+    console.log('11. TOPIC_DELETE (teacher soft-delete topik) OK');
 
     console.log('\nSEMUA SMOKE TEST TCP KE POSTGRESQL LULUS!');
   } finally {

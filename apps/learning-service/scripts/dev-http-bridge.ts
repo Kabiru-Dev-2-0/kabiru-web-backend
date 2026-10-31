@@ -75,8 +75,11 @@ const ROUTE_MAP: Readonly<Record<string, string>> = {
   'GET /health': LEARNING_PATTERNS.HEALTH_CHECK,
   'GET /learning/education-levels': LEARNING_PATTERNS.EDUCATION_LEVEL_LIST,
   'GET /learning/subjects': LEARNING_PATTERNS.SUBJECT_LIST,
+  'POST /learning/subjects': LEARNING_PATTERNS.SUBJECT_CREATE,
   'GET /learning/topics': LEARNING_PATTERNS.TOPIC_LIST,
+  'POST /learning/topics': LEARNING_PATTERNS.TOPIC_CREATE,
   'GET /learning/materials': LEARNING_PATTERNS.MATERIAL_LIST,
+  'POST /learning/materials': LEARNING_PATTERNS.MATERIAL_CREATE,
 };
 
 function matchRoute(
@@ -88,17 +91,57 @@ function matchRoute(
     return { pattern: staticPattern, params: {} };
   }
 
-  if (method === 'GET') {
-    const materialMatch = /^\/learning\/materials\/([^/]+)$/.exec(pathname);
-    if (materialMatch?.[1]) {
-      return {
-        pattern: LEARNING_PATTERNS.MATERIAL_GET_DETAIL,
-        params: { materialId: decodeURIComponent(materialMatch[1]) },
-      };
-    }
+  // Parameterized routes:
+  const authoringMatch = /^\/learning\/materials\/([^/]+)\/authoring$/.exec(pathname);
+  if (method === 'GET' && authoringMatch?.[1]) {
+    return {
+      pattern: LEARNING_PATTERNS.MATERIAL_GET_AUTHORING,
+      params: { materialId: decodeURIComponent(authoringMatch[1]) },
+    };
+  }
+
+  const materialMatch = /^\/learning\/materials\/([^/]+)$/.exec(pathname);
+  if (materialMatch?.[1]) {
+    const materialId = decodeURIComponent(materialMatch[1]);
+    if (method === 'GET') return { pattern: LEARNING_PATTERNS.MATERIAL_GET_DETAIL, params: { materialId } };
+    if (method === 'PATCH') return { pattern: LEARNING_PATTERNS.MATERIAL_UPDATE, params: { materialId } };
+    if (method === 'DELETE') return { pattern: LEARNING_PATTERNS.MATERIAL_DELETE, params: { materialId } };
+  }
+
+  const topicMatch = /^\/learning\/topics\/([^/]+)$/.exec(pathname);
+  if (topicMatch?.[1]) {
+    const topicId = decodeURIComponent(topicMatch[1]);
+    if (method === 'PATCH') return { pattern: LEARNING_PATTERNS.TOPIC_UPDATE, params: { topicId } };
+    if (method === 'DELETE') return { pattern: LEARNING_PATTERNS.TOPIC_DELETE, params: { topicId } };
+  }
+
+  const subjectMatch = /^\/learning\/subjects\/([^/]+)$/.exec(pathname);
+  if (subjectMatch?.[1]) {
+    const subjectId = decodeURIComponent(subjectMatch[1]);
+    if (method === 'PATCH') return { pattern: LEARNING_PATTERNS.SUBJECT_UPDATE, params: { subjectId } };
+    if (method === 'DELETE') return { pattern: LEARNING_PATTERNS.SUBJECT_DELETE, params: { subjectId } };
   }
 
   return null;
+}
+
+function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  if (req.method !== 'POST' && req.method !== 'PATCH') {
+    return Promise.resolve({});
+  }
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        resolve({});
+      }
+    });
+  });
 }
 
 const bridgePort = Number(process.env.DEV_BRIDGE_PORT ?? 3099);
@@ -141,13 +184,14 @@ const server = createServer(async (req, res) => {
     queryData[key] = value;
   });
 
-  const envelope: InternalRequest<Record<string, string>> = {
+  const body = await readJsonBody(req);
+  const envelope: InternalRequest<Record<string, unknown>> = {
     meta: {
       requestId,
       actor: resolveActor(req),
       callerService: 'api-gateway',
     },
-    data: { ...queryData, ...matched.params },
+    data: { ...queryData, ...matched.params, ...body },
   };
 
   try {
