@@ -13,5 +13,13 @@
     "dev:ai": "bun run --cwd apps/ai-service start:dev",
     "build:contracts": "bun run --cwd packages/contracts build",
     "build:all": "bun run --cwd packages/contracts build && bun run --filter '*' build"
+  },
+  "dependencies": {
+    "@nestjs/mapped-types": "^12.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
   }
 }

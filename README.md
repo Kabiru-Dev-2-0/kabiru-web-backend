@@ -255,7 +255,7 @@ Port dan transport yang benar harus mengikuti konfigurasi di `apps/*/src/main.ts
 | User Service | 4012 | Internal |
 | Learning Service | 4013 | Internal |
 | Progress Service | 4014 | Internal |
-| AI Service | 4015 | Internal |
+| AI Service | 11434 | Internal |
 | PostgreSQL | 5432 | Database lokal |
 | Redis | 6379 | Cache lokal |
 
