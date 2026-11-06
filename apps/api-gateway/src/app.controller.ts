@@ -5,141 +5,400 @@ import {
   Headers,
   HttpException,
   HttpStatus,
+  Inject,
   Patch,
   Post,
+  Req,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ClientTCP } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { randomUUID } from 'node:crypto';
-import { env } from 'node:process';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout as rxTimeout, TimeoutError } from 'rxjs';
+import {
+  AUTH_PATTERNS,
+  type ActorContext,
+  type ApiErrorResponse,
+  type ApiSuccessResponse,
+  type InternalRequest,
+  type UserRole,
+} from '@kabiru/contracts';
 
-function getRequestId(headers: Record<string, string | undefined>) {
-  return headers['x-request-id'] ?? randomUUID();
+type GatewayHeaders = Record<string, string | undefined>;
+
+const RPC_TIMEOUTS = {
+  auth: 3000,
+  user: 3000,
+  learningRead: 4000,
+  learningWrite: 8000,
+  progressRead: 4000,
+  progressTransaction: 8000,
+  aiHint: 20000,
+  aiAgent: 25000,
+} as const;
+
+function normalizeRequestId(input?: string) {
+  return input && /^[0-9a-fA-F-]{36}$/.test(input) ? input : randomUUID();
 }
 
-function extractBearerToken(headers: Record<string, string | undefined>) {
+function getRequestId(headers: GatewayHeaders) {
+  return normalizeRequestId(headers['x-request-id'] ?? headers['X-Request-Id']);
+}
+
+function extractBearerToken(headers: GatewayHeaders): string {
   const auth = headers.authorization ?? headers.Authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
     throw new UnauthorizedException({
-      code: 'UNAUTHENTICATED',
-      message: 'Token tidak ada atau tidak valid.',
+      error: {
+        code: 'UNAUTHENTICATED',
+        message: 'Token tidak ada atau tidak valid.',
+      },
+      meta: { requestId: getRequestId(headers) },
     });
   }
-  return auth.replace('Bearer ', '').trim();
+  return auth.replace(/^Bearer\s+/i, '').trim();
 }
 
-function requireRole(role: string | string[], actorRole?: string) {
-  const allowed = Array.isArray(role) ? role : [role];
-  if (!actorRole || !allowed.includes(actorRole)) {
+function normalizeErrorResponse(error: any, requestId: string): never {
+  const payload = error?.response ?? error?.error ?? error;
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'code' in payload &&
+    'message' in payload
+  ) {
+    const httpStatus = Number((payload as any).httpStatus ?? HttpStatus.INTERNAL_SERVER_ERROR);
+
     throw new HttpException(
       {
         error: {
-          code: 'FORBIDDEN',
-          message: 'Role tidak diizinkan melakukan operasi ini.',
+          code: (payload as any).code ?? 'INTERNAL_ERROR',
+          message: (payload as any).message ?? 'Request gagal.',
+          details: (payload as any).details ?? undefined,
         },
-        meta: { requestId: randomUUID() },
+        meta: { requestId },
       },
-      HttpStatus.FORBIDDEN,
+      Number.isFinite(httpStatus) ? httpStatus : HttpStatus.INTERNAL_SERVER_ERROR,
     );
+  }
+
+  if (error instanceof TimeoutError) {
+    throw new HttpException(
+      {
+        error: {
+          code: 'UPSTREAM_TIMEOUT',
+          message: 'Service tujuan tidak merespons dalam waktu yang ditentukan.',
+        },
+        meta: { requestId },
+      },
+      HttpStatus.GATEWAY_TIMEOUT,
+    );
+  }
+
+  throw new HttpException(
+    {
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Terjadi kesalahan internal pada gateway.',
+      },
+      meta: { requestId },
+    },
+    HttpStatus.INTERNAL_SERVER_ERROR,
+  );
+}
+
+async function verifyActor(
+  authClient: ClientProxy,
+  headers: GatewayHeaders,
+): Promise<ActorContext> {
+  const requestId = getRequestId(headers);
+  const token = extractBearerToken(headers);
+
+  try {
+    const verified = await firstValueFrom(
+      authClient.send(AUTH_PATTERNS.VERIFY, { accessToken: token }).pipe(rxTimeout(RPC_TIMEOUTS.auth)),
+    );
+
+    if (!verified?.valid) {
+      throw new UnauthorizedException({
+        error: { code: 'UNAUTHENTICATED', message: 'Token tidak valid atau kedaluwarsa.' },
+        meta: { requestId },
+      });
+    }
+
+    return {
+      userId: verified.userId,
+      role: verified.role as UserRole,
+    };
+  } catch (error) {
+    normalizeErrorResponse(error, requestId);
+  }
+}
+
+async function sendTo<T>(
+  client: ClientProxy,
+  pattern: string,
+  data: unknown,
+  meta: InternalRequest['meta'],
+  timeoutMs: number,
+): Promise<T> {
+  try {
+    return await firstValueFrom(
+      client.send(pattern, { meta, data }).pipe(rxTimeout(timeoutMs)),
+    );
+  } catch (error) {
+    normalizeErrorResponse(error, meta.requestId);
   }
 }
 
 @Controller()
 export class AppController {
-  private readonly authClient: ClientTCP;
-  private readonly userClient: ClientTCP;
+  constructor(
+    @Inject('AUTH_CLIENT') private readonly authClient: ClientProxy,
+    @Inject('USER_CLIENT') private readonly userClient: ClientProxy,
+    @Inject('LEARNING_CLIENT') private readonly learningClient: ClientProxy,
+    @Inject('PROGRESS_CLIENT') private readonly progressClient: ClientProxy,
+    @Inject('AI_CLIENT') private readonly aiClient: ClientProxy,
+  ) {}
 
-  constructor() {
-    this.authClient = new ClientTCP({
-      host: env.AUTH_SERVICE_HOST ?? 'localhost',
-      port: Number(env.AUTH_SERVICE_PORT ?? 4011),
-    });
-
-    this.userClient = new ClientTCP({
-      host: env.USER_SERVICE_HOST ?? 'localhost',
-      port: Number(env.USER_SERVICE_PORT ?? 4012),
-    });
+  private buildMeta(headers: GatewayHeaders, actor: ActorContext | null = null) {
+    return {
+      requestId: getRequestId(headers),
+      actor,
+      callerService: 'api-gateway' as const,
+    };
   }
 
   @Post('auth/register')
-  async register(@Body() body: any, @Headers() headers: Record<string, string | undefined>) {
+  async register(
+    @Body() body: any,
+    @Headers() headers: GatewayHeaders,
+  ): Promise<ApiSuccessResponse<any>> {
     const requestId = getRequestId(headers);
+    const meta = this.buildMeta(headers);
 
-    const result = await firstValueFrom(
-      this.authClient.send('auth.register', body),
-    );
+    try {
+      const result = await sendTo<any>(
+        this.authClient,
+        AUTH_PATTERNS.REGISTER,
+        body,
+        meta,
+        RPC_TIMEOUTS.auth,
+      );
 
-    await firstValueFrom(
-      this.userClient.send('user.profile.create', {
-        userId: result.userId,
-        fullName: body.fullName,
-        role: result.role,
-      }),
-    );
-
-    return { data: result, meta: { requestId } };
+      return {
+        data: result,
+        meta: { requestId },
+      };
+    } catch (error) {
+      normalizeErrorResponse(error, requestId);
+    }
   }
 
   @Post('auth/login')
-  async login(@Body() body: any, @Headers() headers: Record<string, string | undefined>) {
+  async login(
+    @Body() body: any,
+    @Headers() headers: GatewayHeaders,
+  ): Promise<ApiSuccessResponse<any>> {
     const requestId = getRequestId(headers);
+    const meta = this.buildMeta(headers, null);
 
-    const result = await firstValueFrom(
-      this.authClient.send('auth.login', body),
-    );
+    try {
+      const result = await sendTo<any>(
+        this.authClient,
+        AUTH_PATTERNS.LOGIN,
+        body,
+        meta,
+        RPC_TIMEOUTS.auth,
+      );
 
-    return { data: result, meta: { requestId } };
+      return {
+        data: result,
+        meta: { requestId },
+      };
+    } catch (error) {
+      normalizeErrorResponse(error, requestId);
+    }
   }
 
   @Post('auth/refresh')
-  async refresh(@Body() body: any, @Headers() headers: Record<string, string | undefined>) {
+  async refresh(
+    @Body() body: any,
+    @Headers() headers: GatewayHeaders,
+  ): Promise<ApiSuccessResponse<any>> {
     const requestId = getRequestId(headers);
+    const meta = this.buildMeta(headers, null);
 
-    const result = await firstValueFrom(
-      this.authClient.send('auth.refresh', body),
-    );
+    try {
+      const result = await sendTo<any>(
+        this.authClient,
+        AUTH_PATTERNS.REFRESH,
+        body,
+        meta,
+        RPC_TIMEOUTS.auth,
+      );
 
-    return { data: result, meta: { requestId } };
+      return {
+        data: result,
+        meta: { requestId },
+      };
+    } catch (error) {
+      normalizeErrorResponse(error, requestId);
+    }
   }
 
   @Get('users/me')
-  async me(@Headers() headers: Record<string, string | undefined>) {
+  async me(@Headers() headers: GatewayHeaders): Promise<ApiSuccessResponse<any>> {
     const requestId = getRequestId(headers);
-    const token = extractBearerToken(headers);
-    const { userId, role } = await firstValueFrom(
-      this.authClient.send('auth.verify', { accessToken: token }),
+    const actor = await verifyActor(this.authClient, headers);
+
+    const profile = await sendTo<any>(
+      this.userClient,
+      'user.profile.get',
+      { userId: actor.userId },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.user,
     );
 
-    const profile = await firstValueFrom(
-      this.userClient.send('user.profile.get', { userId }),
-    );
-
-    return { data: profile, meta: { requestId } };
+    return {
+      data: profile,
+      meta: { requestId },
+    };
   }
 
   @Patch('users/me/profile')
-  async updateProfile(@Body() body: any, @Headers() headers: Record<string, string | undefined>) {
+  async updateProfile(
+    @Body() body: any,
+    @Headers() headers: GatewayHeaders,
+  ): Promise<ApiSuccessResponse<any>> {
     const requestId = getRequestId(headers);
-    const token = extractBearerToken(headers);
+    const actor = await verifyActor(this.authClient, headers);
 
-    const verified = await firstValueFrom(
-      this.authClient.send('auth.verify', { accessToken: token }),
-    );
+    const allowedRoles: UserRole[] = ['student', 'teacher', 'admin', 'developer'];
+    if (!allowedRoles.includes(actor.role)) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Role tidak diizinkan melakukan operasi ini.',
+          },
+          meta: { requestId },
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
 
-    requireRole(['student', 'teacher', 'admin', 'developer'], verified.role);
-
-    const profile = await firstValueFrom(
-      this.userClient.send('user.profile.update', {
-        userId: verified.userId,
+    const profile = await sendTo<any>(
+      this.userClient,
+      'user.profile.update',
+      {
+        userId: actor.userId,
         fullName: body.fullName,
         phone: body.phone,
         avatarUrl: body.avatarUrl,
         schoolName: body.schoolName,
         educationLevel: body.educationLevel,
-      }),
+      },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.user,
     );
 
-    return { data: profile, meta: { requestId } };
+    return {
+      data: profile,
+      meta: { requestId },
+    };
+  }
+
+  // Contoh route belajar
+  @Get('learning/education-levels')
+  async educationLevels(@Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await verifyActor(this.authClient, headers).catch(() => null);
+
+    const data = await sendTo<any>(
+      this.learningClient,
+      'learning.educationLevel.list',
+      { level: null },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.learningRead,
+    );
+
+    return { data, meta: { requestId } };
+  }
+
+  @Get('learning/curricula')
+  async curricula(
+    @Req() req: any,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    const requestId = getRequestId(headers);
+    const actor = await verifyActor(this.authClient, headers).catch(() => null);
+
+    const data = await sendTo<any>(
+      this.learningClient,
+      'learning.curriculum.list',
+      {
+        level: req.query.level ?? 'SMA',
+        search: req.query.search ?? undefined,
+      },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.learningRead,
+    );
+
+    return { data, meta: { requestId } };
+  }
+
+  @Get('learning/materials/:materialId')
+  async learningMaterialDetail(
+    @Req() req: any,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    const requestId = getRequestId(headers);
+    const actor = await verifyActor(this.authClient, headers).catch(() => null);
+
+    const data = await sendTo<any>(
+      this.learningClient,
+      'learning.material.getDetail',
+      {
+        materialId: req.params.materialId,
+      },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.learningRead,
+    );
+
+    return { data, meta: { requestId } };
+  }
+
+  // Contoh AI route di Gateway
+  @Post('ai/generate')
+  async aiGenerate(@Body() body: any, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await verifyActor(this.authClient, headers).catch(() => null);
+
+    const data = await sendTo<any>(
+      this.aiClient,
+      'ai.generate',
+      body,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.aiAgent,
+    );
+
+    return { data, meta: { requestId } };
+  }
+
+  @Post('progress/submissions')
+  async createSubmission(@Body() body: any, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await verifyActor(this.authClient, headers);
+
+    const data = await sendTo<any>(
+      this.progressClient,
+      'progress.submission.create',
+      body,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.progressTransaction,
+    );
+
+    return { data, meta: { requestId } };
   }
 }
