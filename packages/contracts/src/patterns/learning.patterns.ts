@@ -20,6 +20,10 @@ export const LEARNING_PATTERNS = {
   MATERIAL_DELETE: 'learning.material.delete',
   MATERIAL_GET_AUTHORING: 'learning.material.getAuthoringDetail',
 
+  // Shared LMS Asset Storage (Topic Cover, Material Cover, Badge Icon, Documents)
+  ASSET_UPLOAD: 'learning.asset.upload',
+  ASSET_GET_DETAIL: 'learning.asset.getDetail',
+
   // Internal Service-to-Service ONLY (Never expose via HTTP Gateway)
   INTERNAL_TEST_GET_FOR_EVAL: 'learning.internal.test.getForEvaluation',
   INTERNAL_TEST_GET_HINT_CTX: 'learning.internal.test.getHintContext',

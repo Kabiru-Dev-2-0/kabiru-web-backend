@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kabiru Game - Mengurutkan Item</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="game-container">
+      <header class="game-header">
+        <span class="badge">Sorting</span>
+        <span id="score-display" class="score">Skor: 0</span>
+      </header>
+      <section class="card">
+        <h1 id="instruction-text" class="instruction">Urutkan item berikut:</h1>
+        <ul id="sortable-list" class="sortable-list"></ul>
+        <p id="feedback-text" class="feedback" hidden></p>
+        <button id="check-btn" type="button" class="btn-primary">
+          Periksa Urutan
+        </button>
+      </section>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>

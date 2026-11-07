@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { TimeoutError, firstValueFrom, timeout } from 'rxjs';
 import {
+  GAME_PATTERNS,
   LEARNING_PATTERNS,
   USER_ROLES,
   isServiceErrorPayload,
@@ -21,9 +22,9 @@ interface PaginatedPayload {
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers':
-    'Content-Type, Authorization, x-dev-role, x-dev-user-id, x-request-id',
+    'Content-Type, Authorization, x-dev-role, x-actor-role, x-role, role, x-dev-user-id, x-actor-id, x-request-id',
   'Access-Control-Allow-Private-Network': 'true',
 };
 
@@ -33,26 +34,59 @@ function isPaginatedPayload(value: unknown): value is PaginatedPayload {
   return Array.isArray(candidate.items) && typeof candidate.pagination === 'object';
 }
 
-function resolveActor(req: IncomingMessage): ActorContext | null {
-  const rawRole = req.headers['x-dev-role'];
-  const roleStr = Array.isArray(rawRole) ? rawRole[0] : rawRole;
+const ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
+  student: 'student',
+  siswa: 'student',
+  teacher: 'teacher',
+  guru: 'teacher',
+  admin: 'admin',
+  developer: 'developer',
+  dev: 'developer',
+};
 
-  if (!roleStr || roleStr === 'anon' || roleStr === 'null') {
+function resolveActor(req: IncomingMessage, parsedUrl: URL): ActorContext | null {
+  const authHeader = req.headers.authorization;
+  const bearerRole =
+    typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7).trim()
+      : undefined;
+
+  const rawRole =
+    req.headers['x-dev-role'] ??
+    req.headers['x-actor-role'] ??
+    req.headers['x-role'] ??
+    req.headers['role'] ??
+    parsedUrl.searchParams.get('role') ??
+    parsedUrl.searchParams.get('x-dev-role') ??
+    bearerRole;
+
+  const roleCandidate = (Array.isArray(rawRole) ? rawRole[0] : rawRole)?.trim().toLowerCase();
+
+  if (!roleCandidate || roleCandidate === 'anon' || roleCandidate === 'null') {
     return null;
   }
 
-  if (!(USER_ROLES as readonly string[]).includes(roleStr)) {
+  const mappedRole =
+    ROLE_ALIASES[roleCandidate] ??
+    ((USER_ROLES as readonly string[]).includes(roleCandidate)
+      ? (roleCandidate as UserRole)
+      : null);
+
+  if (!mappedRole) {
     return null;
   }
 
-  const rawUserId = req.headers['x-dev-user-id'];
+  const rawUserId =
+    req.headers['x-dev-user-id'] ??
+    req.headers['x-actor-id'] ??
+    parsedUrl.searchParams.get('userId');
   const userId =
-    (Array.isArray(rawUserId) ? rawUserId[0] : rawUserId) ??
+    (Array.isArray(rawUserId) ? rawUserId[0] : rawUserId)?.trim() ||
     '00000000-0000-4000-8000-000000000001';
 
   return {
     userId,
-    role: roleStr as UserRole,
+    role: mappedRole,
     educationLevelCode: 'SMA',
   };
 }
@@ -80,6 +114,10 @@ const ROUTE_MAP: Readonly<Record<string, string>> = {
   'POST /learning/topics': LEARNING_PATTERNS.TOPIC_CREATE,
   'GET /learning/materials': LEARNING_PATTERNS.MATERIAL_LIST,
   'POST /learning/materials': LEARNING_PATTERNS.MATERIAL_CREATE,
+  'POST /learning/assets': LEARNING_PATTERNS.ASSET_UPLOAD,
+  'GET /game/templates': GAME_PATTERNS.TEMPLATE_LIST,
+  'GET /game/modules': GAME_PATTERNS.MODULE_LIST,
+  'POST /game/modules': GAME_PATTERNS.MODULE_CREATE,
 };
 
 function matchRoute(
@@ -91,7 +129,15 @@ function matchRoute(
     return { pattern: staticPattern, params: {} };
   }
 
-  // Parameterized routes:
+  // Parameterized routes (Curriculum & Assets):
+  const assetMatch = /^\/learning\/assets\/([^/]+)$/.exec(pathname);
+  if (method === 'GET' && assetMatch?.[1]) {
+    return {
+      pattern: LEARNING_PATTERNS.ASSET_GET_DETAIL,
+      params: { assetId: decodeURIComponent(assetMatch[1]) },
+    };
+  }
+
   const authoringMatch = /^\/learning\/materials\/([^/]+)\/authoring$/.exec(pathname);
   if (method === 'GET' && authoringMatch?.[1]) {
     return {
@@ -122,11 +168,76 @@ function matchRoute(
     if (method === 'DELETE') return { pattern: LEARNING_PATTERNS.SUBJECT_DELETE, params: { subjectId } };
   }
 
+  // Parameterized routes (Game Module Studio):
+  const templateMatch = /^\/game\/templates\/([^/]+)$/.exec(pathname);
+  if (method === 'GET' && templateMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.TEMPLATE_GET_DETAIL,
+      params: { templateId: decodeURIComponent(templateMatch[1]) },
+    };
+  }
+
+  const moduleVersionCreateMatch = /^\/game\/modules\/([^/]+)\/versions$/.exec(pathname);
+  if (method === 'POST' && moduleVersionCreateMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.VERSION_CREATE_DRAFT,
+      params: { moduleId: decodeURIComponent(moduleVersionCreateMatch[1]) },
+    };
+  }
+
+  const gameModuleMatch = /^\/game\/modules\/([^/]+)$/.exec(pathname);
+  if (gameModuleMatch?.[1]) {
+    const moduleId = decodeURIComponent(gameModuleMatch[1]);
+    if (method === 'GET') return { pattern: GAME_PATTERNS.MODULE_GET_DETAIL, params: { moduleId } };
+    if (method === 'PATCH') return { pattern: GAME_PATTERNS.MODULE_UPDATE, params: { moduleId } };
+    if (method === 'DELETE') return { pattern: GAME_PATTERNS.MODULE_DELETE, params: { moduleId } };
+  }
+
+  const versionConfigMatch = /^\/game\/versions\/([^/]+)\/config$/.exec(pathname);
+  if (method === 'PATCH' && versionConfigMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.VERSION_UPDATE_CONFIG,
+      params: { versionId: decodeURIComponent(versionConfigMatch[1]) },
+    };
+  }
+
+  const versionFilesMatch = /^\/game\/versions\/([^/]+)\/files$/.exec(pathname);
+  if (method === 'PUT' && versionFilesMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.VERSION_SAVE_CUSTOM_FILES,
+      params: { versionId: decodeURIComponent(versionFilesMatch[1]) },
+    };
+  }
+
+  const versionPublishMatch = /^\/game\/versions\/([^/]+)\/publish$/.exec(pathname);
+  if (method === 'POST' && versionPublishMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.VERSION_PUBLISH,
+      params: { versionId: decodeURIComponent(versionPublishMatch[1]) },
+    };
+  }
+
+  const versionDetailMatch = /^\/game\/versions\/([^/]+)$/.exec(pathname);
+  if (method === 'GET' && versionDetailMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.VERSION_GET_DETAIL,
+      params: { versionId: decodeURIComponent(versionDetailMatch[1]) },
+    };
+  }
+
+  const playerMatch = /^\/game\/player\/([^/]+)$/.exec(pathname);
+  if (method === 'GET' && playerMatch?.[1]) {
+    return {
+      pattern: GAME_PATTERNS.PLAYER_GET_PAYLOAD,
+      params: { versionId: decodeURIComponent(playerMatch[1]) },
+    };
+  }
+
   return null;
 }
 
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  if (req.method !== 'POST' && req.method !== 'PATCH') {
+  if (req.method !== 'POST' && req.method !== 'PATCH' && req.method !== 'PUT') {
     return Promise.resolve({});
   }
   return new Promise((resolve) => {
@@ -185,10 +296,17 @@ const server = createServer(async (req, res) => {
   });
 
   const body = await readJsonBody(req);
+  const actor = resolveActor(req, parsedUrl);
+  console.log(
+    `[dev-http-bridge] ${method} ${parsedUrl.pathname} | actor=${
+      actor ? `${actor.role} (${actor.userId})` : 'NONE (anonim)'
+    }`,
+  );
+
   const envelope: InternalRequest<Record<string, unknown>> = {
     meta: {
       requestId,
-      actor: resolveActor(req),
+      actor,
       callerService: 'api-gateway',
     },
     data: { ...queryData, ...matched.params, ...body },

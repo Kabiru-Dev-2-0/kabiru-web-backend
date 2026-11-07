@@ -11,3 +11,6 @@ coverage/
 .idea/
 .vscode/
 *.tsbuildinfo
+.local-r2-storage/
+**/.local-r2-storage/
+

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kabiru Game - Pilihan Ganda</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="game-container">
+      <header class="game-header">
+        <span id="badge-template" class="badge">Pilihan Ganda</span>
+        <span id="score-display" class="score">Skor: 0</span>
+      </header>
+      <section class="card">
+        <h1 id="question-text" class="question">Memuat pertanyaan...</h1>
+        <div id="options-list" class="options-grid" role="radiogroup"></div>
+        <p id="feedback-text" class="feedback" hidden></p>
+        <button id="submit-btn" type="button" class="btn-primary" disabled>
+          Kirim Jawaban
+        </button>
+      </section>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>

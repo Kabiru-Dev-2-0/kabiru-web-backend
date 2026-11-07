@@ -7,8 +7,10 @@
     "start:prod": "bun run dist/main.js",
     "test": "bun test",
     "smoke:tcp": "bun run scripts/smoke-tcp.ts",
+    "dev:bridge": "bun run scripts/dev-http-bridge.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "bun run prisma/seed.ts"
   },
   "dependencies": {
