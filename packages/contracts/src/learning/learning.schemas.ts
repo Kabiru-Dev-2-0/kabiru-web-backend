@@ -142,3 +142,30 @@ export type MaterialIdParamDto = z.infer<typeof MaterialIdParamSchema>;
 export type UpdateSubjectPayloadDto = z.infer<typeof UpdateSubjectPayloadSchema>;
 export type UpdateTopicPayloadDto = z.infer<typeof UpdateTopicPayloadSchema>;
 export type UpdateMaterialPayloadDto = z.infer<typeof UpdateMaterialPayloadSchema>;
+
+// Skema Upload & Detail Asset Umum LMS (Cover Topik, Cover Materi, Icon Badge, Dokumen)
+export const AssetKindSchema = z.enum(['image', 'audio', 'script', 'bundle', 'document']);
+
+export const UploadAssetSchema = z.object({
+  kind: AssetKindSchema.default('image'),
+  fileName: z
+    .string()
+    .trim()
+    .min(1, 'Nama file wajib diisi')
+    .max(150, 'Nama file maksimal 150 karakter')
+    .regex(
+      /^[a-zA-Z0-9._-]+$/,
+      'Nama file hanya boleh memuat huruf, angka, titik (.), garis bawah (_), dan minus (-)',
+    ),
+  mimeType: z.string().trim().min(1).max(100),
+  content: z.string().min(1, 'Konten file tidak boleh kosong'),
+  encoding: z.enum(['utf8', 'base64']).default('base64'),
+  folder: z.enum(['topics', 'materials', 'badges', 'general']).default('general'),
+});
+
+export const AssetIdParamSchema = z.object({
+  assetId: UuidSchema,
+});
+
+export type UploadAssetDto = z.infer<typeof UploadAssetSchema>;
+export type AssetIdParamDto = z.infer<typeof AssetIdParamSchema>;

@@ -3,11 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import {
+  GAME_PATTERNS,
   LEARNING_PATTERNS,
   isServiceErrorPayload,
   type ActorContext,
+  type AssetDetailDto,
   type CreateTopicDto,
   type EducationLevelItemDto,
+  type GameModuleDetailDto,
+  type GameModuleVersionDetailDto,
+  type GamePlayerPayloadDto,
+  type GameTemplateListItemDto,
   type InternalRequest,
   type MaterialAuthoringDetailDto,
   type MaterialDetailDto,
@@ -231,7 +237,134 @@ async function runSmokeTest() {
     assert.equal(deleteResult.id, newTopic.id);
     console.log('11. TOPIC_DELETE (teacher soft-delete topik) OK');
 
-    console.log('\nSEMUA SMOKE TEST TCP KE POSTGRESQL LULUS!');
+    // ==========================================
+    // GAME MODULE STUDIO & R2 STORAGE SMOKE TESTS
+    // ==========================================
+
+    // 12. GAME TEMPLATE_LIST (pastikan 8 template ter-seed)
+    const templates = await firstValueFrom(
+      client.send<GameTemplateListItemDto[]>(
+        GAME_PATTERNS.TEMPLATE_LIST,
+        makeEnvelope({}),
+      ),
+    );
+    assert.ok(templates.length >= 8);
+    console.log(
+      '12. GAME TEMPLATE_LIST (8 katalog template aktif) OK:',
+      templates.map((t) => t.id),
+    );
+
+    // 13. ASSET_UPLOAD (upload SVG cover topik ke R2 / Storage)
+    const uploadedAsset = await firstValueFrom(
+      client.send<AssetDetailDto>(
+        LEARNING_PATTERNS.ASSET_UPLOAD,
+        makeEnvelope(
+          {
+            kind: 'image',
+            fileName: 'smoke-cover.svg',
+            mimeType: 'image/svg+xml',
+            encoding: 'utf8',
+            content: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>',
+            folder: 'topics',
+          },
+          teacherActor,
+        ),
+      ),
+    );
+    assert.ok(uploadedAsset.id);
+    assert.ok(uploadedAsset.publicUrl.includes('smoke-cover.svg'));
+    console.log('13. ASSET_UPLOAD (upload ke R2 / Storage) OK:', uploadedAsset.publicUrl);
+
+    // 14. GAME MODULE_CREATE (guru coba buat modul custom -> ditolak 403 FORBIDDEN)
+    await assert.rejects(
+      async () => {
+        await firstValueFrom(
+          client.send(
+            GAME_PATTERNS.MODULE_CREATE,
+            makeEnvelope(
+              {
+                name: 'Game Custom Terlarang Guru',
+                source: 'custom',
+              },
+              teacherActor,
+            ),
+          ),
+        );
+      },
+      (err: unknown) => {
+        assert.ok(isServiceErrorPayload(err));
+        assert.equal(err.code, 'FORBIDDEN');
+        assert.equal(err.httpStatus, 403);
+        return true;
+      },
+    );
+    console.log('14. GAME MODULE_CREATE (guru blokir jalur custom -> 403) OK');
+
+    // 15. GAME MODULE_CREATE (guru buat modul dari template multiple_choice)
+    const createdGameModule = await firstValueFrom(
+      client.send<GameModuleDetailDto>(
+        GAME_PATTERNS.MODULE_CREATE,
+        makeEnvelope(
+          {
+            name: 'Kuis Struktur Data Stack',
+            source: 'template',
+            templateId: 'multiple_choice',
+          },
+          teacherActor,
+        ),
+      ),
+    );
+    assert.ok(createdGameModule.id);
+    assert.equal(createdGameModule.versions.length, 1);
+    const draftVersionId = createdGameModule.versions[0]!.id;
+    console.log('15. GAME MODULE_CREATE (template multiple_choice + draft 1.0.0) OK:', {
+      moduleId: createdGameModule.id,
+      slug: createdGameModule.slug,
+      draftVersionId,
+    });
+
+    // 16. GAME VERSION_PUBLISH (materialize template -> upload 3 file ke R2 -> status published)
+    const publishedVersion = await firstValueFrom(
+      client.send<GameModuleVersionDetailDto>(
+        GAME_PATTERNS.VERSION_PUBLISH,
+        makeEnvelope({ versionId: draftVersionId, maxScore: 100 }, teacherActor),
+      ),
+    );
+    assert.equal(publishedVersion.status, 'published');
+    assert.equal(publishedVersion.files.length, 3);
+    console.log(
+      '16. GAME VERSION_PUBLISH (materialize 3 file ke R2 & lock published) OK:',
+      publishedVersion.files.map((f) => `${f.relativePath} -> ${f.publicUrl}`),
+    );
+
+    // 17. GAME PLAYER_GET_PAYLOAD (siswa muat game yang sudah dipublish untuk iframe LMS)
+    const playerPayload = await firstValueFrom(
+      client.send<GamePlayerPayloadDto>(
+        GAME_PATTERNS.PLAYER_GET_PAYLOAD,
+        makeEnvelope({ versionId: draftVersionId }, studentActor),
+      ),
+    );
+    assert.equal(playerPayload.entrypoint, 'index.html');
+    assert.equal(playerPayload.maxScore, 100);
+    assert.ok(playerPayload.baseStorageUrl.endsWith('/'));
+    assert.equal(playerPayload.files.length, 3);
+    console.log('17. GAME PLAYER_GET_PAYLOAD (iframe LMS payload siap) OK:', {
+      entrypoint: playerPayload.entrypoint,
+      baseStorageUrl: playerPayload.baseStorageUrl,
+      filesCount: playerPayload.files.length,
+    });
+
+    // 18. GAME MODULE_DELETE (soft-delete modul smoke test)
+    const deletedGame = await firstValueFrom(
+      client.send<MutationResultDto>(
+        GAME_PATTERNS.MODULE_DELETE,
+        makeEnvelope({ moduleId: createdGameModule.id }, teacherActor),
+      ),
+    );
+    assert.equal(deletedGame.success, true);
+    console.log('18. GAME MODULE_DELETE (soft-delete modul game) OK');
+
+    console.log('\nSEMUA SMOKE TEST TCP KE POSTGRESQL & R2 STORAGE LULUS!');
   } finally {
     await client.close();
   }

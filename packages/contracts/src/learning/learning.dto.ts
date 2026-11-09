@@ -197,3 +197,10 @@ export interface MutationResultDto {
   id: string;
   message?: string;
 }
+
+export interface AssetDetailDto extends AssetSummaryDto {
+  sha256: string;
+  publicUrl: string;
+  uploadedBy: string | null;
+  createdAt: string;
+}

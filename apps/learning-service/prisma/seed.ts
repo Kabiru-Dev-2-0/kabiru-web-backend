@@ -302,8 +302,219 @@ async function main() {
     },
   });
 
+  // ==========================================
+  // SEED 8 KATALOG GAME TEMPLATE (PRD Bab 3.1 & 5.4)
+  // ==========================================
+  const gameTemplates = [
+    {
+      id: 'multiple_choice',
+      name: 'Multiple Choice',
+      description: 'Kuis pilihan ganda satu jawaban benar lengkap dengan penjelasan umpan balik.',
+      configSchema: {
+        type: 'object',
+        required: ['question', 'options', 'answerIndex'],
+        properties: {
+          question: { type: 'string', title: 'Pertanyaan', maxLength: 500 },
+          options: {
+            type: 'array',
+            title: 'Daftar Pilihan Jawaban',
+            minItems: 2,
+            maxItems: 6,
+            items: { type: 'string', maxLength: 200 },
+          },
+          answerIndex: { type: 'integer', title: 'Indeks Jawaban Benar (mulai dari 0)', minimum: 0 },
+          explanation: { type: 'string', title: 'Penjelasan Jawaban', maxLength: 500 },
+        },
+      },
+      defaultConfig: {
+        question: 'Struktur data manakah yang bekerja dengan prinsip LIFO (Last In First Out)?',
+        options: ['Queue', 'Stack', 'Tree', 'Graph'],
+        answerIndex: 1,
+        explanation: 'Stack menumpuk elemen sehingga elemen terakhir yang masuk keluar lebih dulu.',
+      },
+    },
+    {
+      id: 'sorting',
+      name: 'Sorting',
+      description: 'Permainan mengurutkan langkah algoritma atau nilai secara berurutan.',
+      configSchema: {
+        type: 'object',
+        required: ['instruction', 'items'],
+        properties: {
+          instruction: { type: 'string', title: 'Instruksi Pengurutan', maxLength: 300 },
+          items: {
+            type: 'array',
+            title: 'Urutan Item yang Benar',
+            minItems: 2,
+            maxItems: 10,
+            items: { type: 'string', maxLength: 150 },
+          },
+        },
+      },
+      defaultConfig: {
+        instruction: 'Urutkan tahapan kompilasi dan eksekusi program berikut dari awal hingga akhir:',
+        items: ['Menulis Source Code', 'Kompilasi ke Kode Mesin', 'Linking Library', 'Eksekusi Program'],
+      },
+    },
+    {
+      id: 'checkbox',
+      name: 'Checkbox (Multi-Select)',
+      description: 'Pertanyaan pilihan jamak dengan perhitungan skor proporsional.',
+      configSchema: {
+        type: 'object',
+        required: ['question', 'options', 'correctIndices'],
+        properties: {
+          question: { type: 'string', title: 'Pertanyaan', maxLength: 500 },
+          options: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 8 },
+          correctIndices: { type: 'array', items: { type: 'integer', minimum: 0 }, minItems: 1 },
+        },
+      },
+      defaultConfig: {
+        question: 'Pilih tipe data primitif pada bahasa pemrograman:',
+        options: ['Integer', 'Boolean', 'Database', 'Character'],
+        correctIndices: [0, 1, 3],
+      },
+    },
+    {
+      id: 'fill_blank',
+      name: 'Fill in the Blank',
+      description: 'Melengkapi bagian rumpang pada kalimat atau potongan algoritma.',
+      configSchema: {
+        type: 'object',
+        required: ['prompt', 'blanks'],
+        properties: {
+          prompt: { type: 'string', title: 'Teks dengan penanda ___', maxLength: 1000 },
+          blanks: { type: 'array', items: { type: 'string' }, minItems: 1 },
+          caseSensitive: { type: 'boolean', default: false },
+        },
+      },
+      defaultConfig: {
+        prompt: 'Kompleksitas waktu pencarian Binary Search pada array terurut adalah O(___).',
+        blanks: ['log n'],
+        caseSensitive: false,
+      },
+    },
+    {
+      id: 'drag_drop',
+      name: 'Drag & Drop',
+      description: 'Memasangkan konsep dengan kategori atau definisi yang sesuai.',
+      configSchema: {
+        type: 'object',
+        required: ['instruction', 'pairs'],
+        properties: {
+          instruction: { type: 'string', maxLength: 300 },
+          pairs: {
+            type: 'array',
+            minItems: 2,
+            items: {
+              type: 'object',
+              required: ['item', 'target'],
+              properties: {
+                item: { type: 'string' },
+                target: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      defaultConfig: {
+        instruction: 'Pasangkan komponen komputer berikut dengan fungsinya:',
+        pairs: [
+          { item: 'CPU', target: 'Pemrosesan Instruksi' },
+          { item: 'RAM', target: 'Memori Sementara (Volatile)' },
+        ],
+      },
+    },
+    {
+      id: 'pattern_painter',
+      name: 'Pattern Painter',
+      description: 'Mewarnai sel grid sesuai pola target untuk melatih pengenalan pola.',
+      configSchema: {
+        type: 'object',
+        required: ['gridSize', 'palette', 'targetGrid'],
+        properties: {
+          gridSize: { type: 'integer', minimum: 2, maximum: 8 },
+          palette: { type: 'array', items: { type: 'string' } },
+          targetGrid: { type: 'array', items: { type: 'integer' } },
+        },
+      },
+      defaultConfig: {
+        gridSize: 3,
+        palette: ['#ffffff', '#0284c7', '#16a34a'],
+        targetGrid: [1, 0, 1, 0, 2, 0, 1, 0, 1],
+      },
+    },
+    {
+      id: 'maze_runner',
+      name: 'Maze Runner',
+      description: 'Menyusun langkah navigasi dari titik awal ke tujuan dengan langkah optimal.',
+      configSchema: {
+        type: 'object',
+        required: ['grid', 'start', 'goal', 'maxSteps'],
+        properties: {
+          grid: { type: 'array', items: { type: 'array', items: { type: 'integer' } } },
+          start: { type: 'array', items: { type: 'integer' } },
+          goal: { type: 'array', items: { type: 'integer' } },
+          maxSteps: { type: 'integer', minimum: 1 },
+        },
+      },
+      defaultConfig: {
+        grid: [
+          [0, 0, 1],
+          [1, 0, 0],
+          [0, 0, 0],
+        ],
+        start: [0, 0],
+        goal: [2, 2],
+        maxSteps: 6,
+      },
+    },
+    {
+      id: 'code_debugger',
+      name: 'Code Debugger',
+      description: 'Menemukan dan memperbaiki baris kode yang mengandung bug logika/sintaks.',
+      configSchema: {
+        type: 'object',
+        required: ['language', 'buggyCode', 'bugLine', 'fixedLine'],
+        properties: {
+          language: { type: 'string', default: 'python' },
+          buggyCode: { type: 'string', maxLength: 2000 },
+          bugLine: { type: 'integer', minimum: 1 },
+          fixedLine: { type: 'string', maxLength: 300 },
+        },
+      },
+      defaultConfig: {
+        language: 'python',
+        buggyCode: 'def is_even(n):\n  return n % 2 == 1',
+        bugLine: 2,
+        fixedLine: '  return n % 2 == 0',
+      },
+    },
+  ];
+
+  for (const tpl of gameTemplates) {
+    await prisma.gameTemplate.upsert({
+      where: { id: tpl.id },
+      update: {
+        name: tpl.name,
+        description: tpl.description,
+        configSchema: tpl.configSchema,
+        defaultConfig: tpl.defaultConfig,
+        isActive: true,
+      },
+      create: {
+        id: tpl.id,
+        name: tpl.name,
+        description: tpl.description,
+        configSchema: tpl.configSchema,
+        defaultConfig: tpl.defaultConfig,
+        isActive: true,
+      },
+    });
+  }
+
   console.log(
-    `Seed learning-service selesai: jenjang=[${sd.code}, ${smp.code}, ${sma.code}], topikPublished=${topicPub.id}, soalPublished=${testPub1.id}`,
+    `Seed learning-service selesai: jenjang=[${sd.code}, ${smp.code}, ${sma.code}], topikPublished=${topicPub.id}, soalPublished=${testPub1.id}, gameTemplates=${gameTemplates.length}`,
   );
 }
 

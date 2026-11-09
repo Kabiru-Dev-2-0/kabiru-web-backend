@@ -88,6 +88,21 @@ enum TierType {
   @@map("tier_type")
 }
 
+enum ModuleSource {
+  TEMPLATE @map("template")
+  CUSTOM   @map("custom")
+
+  @@map("module_source")
+}
+
+enum VersionStatus {
+  DRAFT     @map("draft")
+  PUBLISHED @map("published")
+  ARCHIVED  @map("archived")
+
+  @@map("version_status")
+}
+
 // ==========================================
 // DOMAIN 2: KURIKULUM & KONTEN BELAJAR
 // ==========================================
@@ -163,10 +178,10 @@ model Material {
 model Asset {
   id          String    @id @default(uuid()) @db.Uuid
   kind        AssetKind
-  storagePath String    @map("storage_path") @db.Text
+  storagePath String    @unique @map("storage_path") @db.Text
   mimeType    String    @map("mime_type") @db.VarChar(100)
   sizeBytes   BigInt    @map("size_bytes")
-  sha256      String    @unique @db.Char(64)
+  sha256      String    @db.Char(64)
   uploadedBy  String?   @map("uploaded_by") @db.Uuid
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
@@ -175,49 +190,54 @@ model Asset {
   moduleFiles    GameModuleFile[]
   badgeIcons     Badge[]          @relation("BadgeIconAsset")
 
+  @@index([sha256])
   @@map("asset")
 }
 
-model TemplateType {
-  id           String       @id @default(uuid()) @db.Uuid
-  code         String       @unique @db.VarChar(50)
-  name         String       @db.VarChar(100)
-  configSchema Json?        @map("config_schema")
-  isActive     Boolean      @default(true) @map("is_active")
-  modules      GameModule[]
+model GameTemplate {
+  id            String       @id // misal: 'multiple_choice', 'sorting', 'pattern_painter'
+  name          String       @db.VarChar(100)
+  description   String?      @db.Text
+  configSchema  Json         @map("config_schema") // JSON Schema untuk form dinamis guru
+  defaultConfig Json         @default("{}") @map("default_config") // default form
+  isActive      Boolean      @default(true) @map("is_active")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  modules       GameModule[]
 
-  @@map("template_type")
+  @@map("game_template")
 }
 
 model GameModule {
-  id             String        @id @default(uuid()) @db.Uuid
-  key            String        @unique @db.VarChar(100)
-  name           String        @db.VarChar(150)
-  description    String?       @db.Text
-  kind           String        @default("template") @db.VarChar(50)
-  templateTypeId String?       @map("template_type_id") @db.Uuid
-  status         ModuleStatus  @default(DRAFT)
-  createdBy      String?       @map("created_by") @db.Uuid
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  id          String        @id @default(uuid()) @db.Uuid
+  slug        String        @unique @db.VarChar(100) // URL-friendly ID
+  name        String        @db.VarChar(150)
+  description String?       @db.Text
+  source      ModuleSource  @default(TEMPLATE) // 'template' atau 'custom'
+  templateId  String?       @map("template_id") // jika source=template, wajib ada
+  status      ModuleStatus  @default(DRAFT) // draft, active, disabled
+  createdBy   String        @map("created_by") @db.Uuid // ID Guru atau Developer
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz // soft-delete
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  templateType TemplateType?       @relation(fields: [templateTypeId], references: [id], onDelete: SetNull)
-  versions     GameModuleVersion[]
+  template    GameTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  versions    GameModuleVersion[]
 
   @@map("game_module")
 }
 
 model GameModuleVersion {
-  id             String   @id @default(uuid()) @db.Uuid
-  gameModuleId   String   @map("game_module_id") @db.Uuid
-  version        String   @db.VarChar(50)
-  checksumSha256 String?  @map("checksum_sha256") @db.Char(64)
-  configSchema   Json?    @map("config_schema")
-  sandboxPolicy  Json?    @map("sandbox_policy")
-  manifest       Json?
-  config         Json?
-  isActive       Boolean  @default(true) @map("is_active")
-  createdBy      String?  @map("created_by") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id             String        @id @default(uuid()) @db.Uuid
+  gameModuleId   String        @map("game_module_id") @db.Uuid
+  version        String        @db.VarChar(50) // e.g. "1.0.0"
+  status         VersionStatus @default(DRAFT) // 'draft', 'published', 'archived'
+  config         Json          @default("{}") // Isian form guru atau config custom
+  manifest       Json?         // Berisi ManifestSchema (entrypoint, max_score, dll)
+  checksumSha256 String?       @map("checksum_sha256") @db.Char(64)
+  storagePrefix  String?       @map("storage_prefix") @db.Text // prefix folder di Cloudflare R2
+  publishedAt    DateTime?     @map("published_at") @db.Timestamptz
+  publishedBy    String?       @map("published_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
 
   gameModule GameModule       @relation(fields: [gameModuleId], references: [id], onDelete: Cascade)
   files      GameModuleFile[]
@@ -232,7 +252,7 @@ model GameModuleFile {
   id                  String   @id @default(uuid()) @db.Uuid
   gameModuleVersionId String   @map("game_module_version_id") @db.Uuid
   assetId             String   @map("asset_id") @db.Uuid
-  relativePath        String   @map("relative_path") @db.Text
+  relativePath        String   @map("relative_path") @db.Text // e.g. "index.html", "images/fish.png"
   isEntrypoint        Boolean  @default(false) @map("is_entrypoint")
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
 
