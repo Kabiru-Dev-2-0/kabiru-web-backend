@@ -1,13 +1,17 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpException,
   HttpStatus,
   Inject,
+  Param,
   Patch,
   Post,
+  Put,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -19,6 +23,7 @@ import {
   type ActorContext,
   type ApiErrorResponse,
   type ApiSuccessResponse,
+  GAME_PATTERNS,
   type InternalRequest,
   type UserRole,
 } from '@kabiru/contracts';
@@ -167,6 +172,28 @@ export class AppController {
       actor,
       callerService: 'api-gateway' as const,
     };
+  }
+
+  private async gameModuleForward<T>(
+    headers: GatewayHeaders,
+    pattern: string,
+    data: unknown,
+    allowAnonymous = false,
+    timeoutMs: number = RPC_TIMEOUTS.learningRead,
+  ): Promise<ApiSuccessResponse<T>> {
+    const requestId = getRequestId(headers);
+    const actor = allowAnonymous
+      ? await verifyActor(this.authClient, headers).catch(() => null)
+      : await verifyActor(this.authClient, headers);
+    const result = await sendTo<T>(
+      this.learningClient,
+      pattern,
+      data,
+      this.buildMeta(headers, actor),
+      timeoutMs,
+    );
+
+    return { data: result, meta: { requestId } };
   }
 
   @Post('auth/register')
@@ -367,6 +394,165 @@ export class AppController {
     );
 
     return { data, meta: { requestId } };
+  }
+
+  @Get('game/templates')
+  gameTemplates(
+    @Query() query: Record<string, string | undefined>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(headers, GAME_PATTERNS.TEMPLATE_LIST, query, true);
+  }
+
+  @Get('game/templates/:templateId')
+  gameTemplateDetail(
+    @Param('templateId') templateId: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.TEMPLATE_GET_DETAIL,
+      { templateId },
+      true,
+    );
+  }
+
+  @Get('game/modules')
+  gameModules(
+    @Query() query: Record<string, string | undefined>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(headers, GAME_PATTERNS.MODULE_LIST, query);
+  }
+
+  @Post('game/modules')
+  createGameModule(@Body() body: Record<string, unknown>, @Headers() headers: GatewayHeaders) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.MODULE_CREATE,
+      body,
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Get('game/modules/:moduleId')
+  gameModuleDetail(
+    @Param('moduleId') moduleId: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(headers, GAME_PATTERNS.MODULE_GET_DETAIL, { moduleId });
+  }
+
+  @Patch('game/modules/:moduleId')
+  updateGameModule(
+    @Param('moduleId') moduleId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.MODULE_UPDATE,
+      { ...body, moduleId },
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Delete('game/modules/:moduleId')
+  deleteGameModule(
+    @Param('moduleId') moduleId: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.MODULE_DELETE,
+      { moduleId },
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Post('game/modules/:moduleId/versions')
+  createGameVersionDraft(
+    @Param('moduleId') moduleId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.VERSION_CREATE_DRAFT,
+      { ...body, moduleId },
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Get('game/versions/:versionId')
+  gameVersionDetail(
+    @Param('versionId') versionId: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(headers, GAME_PATTERNS.VERSION_GET_DETAIL, { versionId });
+  }
+
+  @Patch('game/versions/:versionId/config')
+  updateGameVersionConfig(
+    @Param('versionId') versionId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.VERSION_UPDATE_CONFIG,
+      { ...body, versionId },
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Put('game/versions/:versionId/files')
+  saveGameVersionFiles(
+    @Param('versionId') versionId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.VERSION_SAVE_CUSTOM_FILES,
+      { ...body, versionId },
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Post('game/versions/:versionId/publish')
+  publishGameVersion(
+    @Param('versionId') versionId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.VERSION_PUBLISH,
+      { ...body, versionId },
+      false,
+      RPC_TIMEOUTS.learningWrite,
+    );
+  }
+
+  @Get('game/player/:versionId')
+  gamePlayerPayload(
+    @Param('versionId') versionId: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.gameModuleForward(
+      headers,
+      GAME_PATTERNS.PLAYER_GET_PAYLOAD,
+      { versionId },
+      true,
+      RPC_TIMEOUTS.learningRead,
+    );
   }
 
   // Contoh AI route di Gateway
