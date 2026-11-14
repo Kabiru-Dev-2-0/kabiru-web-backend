@@ -9,6 +9,18 @@ export const ModuleSourceSchema = z.enum(['template', 'custom']);
 export const VersionStatusSchema = z.enum(['draft', 'published', 'archived']);
 export const ModuleStatusSchema = z.enum(['draft', 'active', 'disabled']);
 
+/**
+ * Boolean dari query string. z.coerce.boolean() memakai Boolean(value), sehingga string "false" / "0"
+ * ikut terbaca true (string non-kosong = truthy). Schema ini memetakan string secara eksplisit.
+ */
+export const QueryBooleanSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1') return true;
+  if (normalized === 'false' || normalized === '0') return false;
+  return value; // nilai lain dibiarkan agar z.boolean() menolak dengan VALIDATION_ERROR
+}, z.boolean());
+
 // Proteksi OWASP Path Traversal untuk relativePath (misal: "index.html", "images/fish.png")
 export const RelativeFilePathSchema = z
   .string()
@@ -68,7 +80,7 @@ export const ManifestSchema = z
 
 export const ListGameTemplatesQuerySchema = z.object({
   search: z.string().trim().max(100, 'Pencarian maksimal 100 karakter').optional(),
-  onlyActive: z.coerce.boolean().default(true),
+  onlyActive: QueryBooleanSchema.default(true),
 });
 
 export const GameTemplateIdParamSchema = z.object({

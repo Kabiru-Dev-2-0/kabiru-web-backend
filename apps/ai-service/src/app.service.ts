@@ -66,9 +66,7 @@ export class AppService {
   ];
 
   constructor() {
-    const host = process.env.AI_SERVICE_HOST ?? 'localhost';
-    const port = process.env.AI_SERVICE_PORT ?? '11434';
-    this.ollamaUrl = process.env.OLLAMA_URL ?? `http://${host}:${port}`;
+    this.ollamaUrl = process.env.OLLAMA_URL ?? 'http://localhost:11434';
     this.ollamaModel = process.env.OLLAMA_MODEL ?? 'its-codellama-7b:latest';
   }
 

@@ -9,6 +9,3 @@ export * from './auth/auth.dto';
 export * from './patterns/game.patterns';
 export * from './game/game.dto';
 export * from './game/game.schemas';
-export * from './patterns/game.patterns';
-export * from './game/game.dto';
-export * from './game/game.schemas';
