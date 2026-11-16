@@ -1,0 +1,286 @@
+name: CI/CD Pipeline (Kabiru Backend)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BUN_VERSION: "1.2.0"
+
+jobs:
+  # ============================================================================
+  # STAGE 1: DETECT CHANGED SERVICES & SHARED PACKAGES
+  # ============================================================================
+  changes:
+    name: Detect Affected Services
+    runs-on: ubuntu-latest
+    outputs:
+      shared: ${{ steps.filter.outputs.shared }}
+      api-gateway: ${{ steps.filter.outputs.shared == 'true' || steps.filter.outputs.api-gateway == 'true' }}
+      auth-service: ${{ steps.filter.outputs.shared == 'true' || steps.filter.outputs.auth-service == 'true' }}
+      user-service: ${{ steps.filter.outputs.shared == 'true' || steps.filter.outputs.user-service == 'true' }}
+      learning-service: ${{ steps.filter.outputs.shared == 'true' || steps.filter.outputs.learning-service == 'true' }}
+      progress-service: ${{ steps.filter.outputs.shared == 'true' || steps.filter.outputs.progress-service == 'true' }}
+      ai-service: ${{ steps.filter.outputs.shared == 'true' || steps.filter.outputs.ai-service == 'true' }}
+      matrix: ${{ steps.matrix.outputs.services }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check path changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared:
+              - 'package.json'
+              - 'bun.lock'
+              - 'packages/contracts/**'
+              - 'compose.prod.yaml'
+              - '.github/workflows/ci-cd.yml'
+            api-gateway:
+              - 'apps/api-gateway/**'
+            auth-service:
+              - 'apps/auth-service/**'
+            user-service:
+              - 'apps/user-service/**'
+            learning-service:
+              - 'apps/learning-service/**'
+            progress-service:
+              - 'apps/progress-service/**'
+            ai-service:
+              - 'apps/ai-service/**'
+
+      - name: Build dynamic service matrix
+        id: matrix
+        run: |
+          SERVICES=()
+          if [[ "${{ steps.filter.outputs.shared }}" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SERVICES=("api-gateway" "auth-service" "user-service" "learning-service" "progress-service" "ai-service")
+          else
+            [[ "${{ steps.filter.outputs.api-gateway }}" == "true" ]] && SERVICES+=("api-gateway")
+            [[ "${{ steps.filter.outputs.auth-service }}" == "true" ]] && SERVICES+=("auth-service")
+            [[ "${{ steps.filter.outputs.user-service }}" == "true" ]] && SERVICES+=("user-service")
+            [[ "${{ steps.filter.outputs.learning-service }}" == "true" ]] && SERVICES+=("learning-service")
+            [[ "${{ steps.filter.outputs.progress-service }}" == "true" ]] && SERVICES+=("progress-service")
+            [[ "${{ steps.filter.outputs.ai-service }}" == "true" ]] && SERVICES+=("ai-service")
+          fi
+          JSON_MATRIX=$(printf '%s\n' "${SERVICES[@]}" | jq -R . | jq -s -c 'map(select(length > 0))')
+          echo "services=${JSON_MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Affected services: ${JSON_MATRIX}"
+
+  # ============================================================================
+  # STAGE 2: TYPECHECK, BUILD CONTRACTS, & RUN UNIT TESTS
+  # ============================================================================
+  verify:
+    name: Typecheck & Unit Tests
+    needs: changes
+    if: ${{ needs.changes.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Build & Typecheck shared @kabiru/contracts
+        run: |
+          bun run --cwd packages/contracts typecheck
+          bun run --cwd packages/contracts build
+
+      - name: Generate Prisma Client (if learning-service affected)
+        if: ${{ needs.changes.outputs.learning-service == 'true' }}
+        run: bun run --cwd apps/learning-service prisma:generate
+
+      - name: Typecheck & Build affected services
+        run: |
+          for svc in $(echo '${{ needs.changes.outputs.matrix }}' | jq -r '.[]'); do
+            echo "=== Building & Typechecking $svc ==="
+            bun run --cwd "apps/$svc" build
+          done
+
+      - name: Run Unit Tests (learning-service)
+        if: ${{ needs.changes.outputs.learning-service == 'true' }}
+        run: bun run --cwd apps/learning-service test
+
+  # ============================================================================
+  # STAGE 3: DOCKER BUILDX & PUSH TO GHCR (IMMUTABLE SHA TAG)
+  # ============================================================================
+  build-and-push:
+    name: Build & Push (${{ matrix.service }})
+    needs: [changes, verify]
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        service: ${{ fromJson(needs.changes.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set lowercase owner name
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/kabiru-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/kabiru-${{ matrix.service }}:main
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # ============================================================================
+  # STAGE 4: DEPLOY TO VPS, RUN DB MIGRATION, SMOKE TEST, & AUTO-ROLLBACK
+  # ============================================================================
+  deploy:
+    name: Deploy to VPS & Smoke Test
+    needs: [changes, build-and-push]
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set lowercase owner name
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Copy compose.prod.yaml and infra scripts to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "compose.prod.yaml,infra/postgres/init-databases.sh"
+          target: "/home/${{ secrets.VPS_USER }}/kabiru-backend"
+
+      - name: Execute Deployment, Migration, Healthcheck & Rollback on VPS
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "/home/${{ secrets.VPS_USER }}/kabiru-backend"
+            chmod +x infra/postgres/init-databases.sh
+
+            export GHCR_OWNER="${{ steps.owner.outputs.name }}"
+            NEW_SHA="${{ github.sha }}"
+            AFFECTED_SERVICES=($(echo '${{ needs.changes.outputs.matrix }}' | jq -r '.[]'))
+
+            # 1) Simpan SHA yang sedang berjalan untuk fallback rollback
+            PREV_TAG="main"
+            if [ -f .current_image_tag ]; then
+              PREV_TAG=$(cat .current_image_tag)
+            fi
+            echo "Previous active tag: ${PREV_TAG} | New target SHA: ${NEW_SHA}"
+
+            # 2) Login ke GHCR dari VPS (jika package berstatus private)
+            echo "${{ secrets.GHCR_PULL_TOKEN || secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin || true
+
+            # 3) Pastikan PostgreSQL dan Redis menyala dan sehat
+            IMAGE_TAG="${NEW_SHA}" docker compose -f compose.prod.yaml up -d postgres redis
+
+            # 4) Pull image terbaru untuk service yang terdampak
+            for svc in "${AFFECTED_SERVICES[@]}"; do
+              echo "Pulling ghcr.io/${GHCR_OWNER}/kabiru-${svc}:${NEW_SHA}..."
+              docker pull "ghcr.io/${GHCR_OWNER}/kabiru-${svc}:${NEW_SHA}"
+              # Tag juga sebagai :current di mesin lokal VPS agar service yang tidak ikut di-build di commit ini tetap punya tag konsisten
+              docker tag "ghcr.io/${GHCR_OWNER}/kabiru-${svc}:${NEW_SHA}" "ghcr.io/${GHCR_OWNER}/kabiru-${svc}:current"
+            done
+
+            # Pastikan semua 6 service memiliki tag :current (fallback ke :main jika baru pertama kali deploy)
+            for all_svc in api-gateway auth-service user-service learning-service progress-service ai-service; do
+              if ! docker image inspect "ghcr.io/${GHCR_OWNER}/kabiru-${all_svc}:current" >/dev/null 2>&1; then
+                echo "Initializing :current tag for ${all_svc} from :main..."
+                docker pull "ghcr.io/${GHCR_OWNER}/kabiru-${all_svc}:main"
+                docker tag "ghcr.io/${GHCR_OWNER}/kabiru-${all_svc}:main" "ghcr.io/${GHCR_OWNER}/kabiru-${all_svc}:current"
+              fi
+            done
+
+            # 5) Pisahkan Job Migrasi Database dari Startup Aplikasi
+            if [[ "${{ needs.changes.outputs.learning-service }}" == "true" ]]; then
+              echo "Running database migrations (prisma migrate deploy)..."
+              IMAGE_TAG="current" docker compose -f compose.prod.yaml --profile tools run --rm learning-migrate
+            fi
+
+            # 6) Rolling update menggunakan tag :current
+            echo "Starting updated containers..."
+            IMAGE_TAG="current" docker compose -f compose.prod.yaml up -d --remove-orphans
+
+            # 7) Healthcheck / Smoke Test dengan Mekanisme Auto-Rollback
+            echo "Running post-deploy smoke test on http://127.0.0.1:3000/v1/health ..."
+            HEALTH_OK=false
+            for attempt in {1..12}; do
+              if curl -fsS --max-time 5 http://127.0.0.1:3000/v1/health >/dev/null 2>&1; then
+                HEALTH_OK=true
+                break
+              fi
+              echo "Attempt ${attempt}/12: waiting 3s for gateway & services..."
+              sleep 3
+            done
+
+            if [ "${HEALTH_OK}" = "true" ]; then
+              echo "${NEW_SHA}" > .current_image_tag
+              echo "✅ Deployment SHA ${NEW_SHA} berhasil dan lolos smoke test!"
+              docker image prune -f
+              exit 0
+            fi
+
+            echo "❌ Smoke test GAGAL! Memulai Auto-Rollback ke tag sebelumnya (${PREV_TAG})..."
+            docker compose -f compose.prod.yaml logs --tail=50 api-gateway learning-service || true
+
+            if [ "${PREV_TAG}" != "main" ]; then
+              for svc in "${AFFECTED_SERVICES[@]}"; do
+                if docker image inspect "ghcr.io/${GHCR_OWNER}/kabiru-${svc}:${PREV_TAG}" >/dev/null 2>&1; then
+                  docker tag "ghcr.io/${GHCR_OWNER}/kabiru-${svc}:${PREV_TAG}" "ghcr.io/${GHCR_OWNER}/kabiru-${svc}:current"
+                fi
+              done
+              IMAGE_TAG="current" docker compose -f compose.prod.yaml up -d --remove-orphans
+            fi
+            exit 1
