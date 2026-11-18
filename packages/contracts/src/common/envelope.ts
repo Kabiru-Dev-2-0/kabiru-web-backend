@@ -2,6 +2,8 @@ export const USER_ROLES = ['student', 'teacher', 'admin', 'developer'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const AUTHORING_ROLES: readonly UserRole[] = ['teacher', 'admin', 'developer'];
+export const ADMIN_ROLES: readonly UserRole[] = ['admin'];
+export const DEVELOPER_AND_ADMIN_ROLES: readonly UserRole[] = ['developer', 'admin'];
 
 export const EDUCATION_LEVEL_CODES = ['SD', 'SMP', 'SMA'] as const;
 export type EducationLevelCode = (typeof EDUCATION_LEVEL_CODES)[number];

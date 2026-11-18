@@ -83,6 +83,31 @@ Pada production, `ENABLE_DEV_ACTOR_HEADERS` dinonaktifkan (`false`). Seluruh req
 | `Authorization` | `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` | Token akses JWT yang valid |
 | `Content-Type` | `application/json` | Wajib untuk request method POST, PATCH, PUT |
 
+### C. Matriks Hak Akses RBAC (Role-Based Access Control)
+Sistem membedakan hak akses berdasarkan 4 role pengguna:
+1. **`student` (Siswa):** Akses ruang belajar publik, materi terpublikasi (tanpa kunci jawaban), eksplorasi mapel/topik, game player, AI hint, dan profil pribadi. Ditolak (`403 FORBIDDEN`) jika mengakses authoring CMS, kunci jawaban, modul game studio, atau administrasi user.
+2. **`teacher` (Guru):** Semua hak akses siswa ditambah pengelolaan kurikulum (CRUD mapel, topik, materi), melihat materi draft & kunci jawaban, mengunggah aset materi, serta membuat dan mempublikasikan game modul berbasis template bawaan.
+3. **`developer` (Pengembang Game):** Semua hak akses guru ditambah pembuatan modul game custom (HTML/CSS/JS) dan manipulasi custom code files via editor Monaco.
+4. **`admin` (Administrator Sistem):** Akses penuh ke seluruh fitur sistem, termasuk manajemen pengguna global (`GET /users`), pengubahan role akun (`PATCH /users/:userId/role`), dan pembuatan akun administratif (`POST /users`).
+
+| Fitur / Endpoint | Publik / Anon | `student` | `teacher` | `developer` | `admin` |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `POST /auth/register` (Registrasi Publik) | ✅ (menjadi student) | ✅ | ✅ | ✅ | ✅ |
+| `POST /auth/login`, `POST /auth/refresh` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `GET /users/me`, `PATCH /users/me/profile` | ❌ (401) | ✅ | ✅ | ✅ | ✅ |
+| `GET /users` (Daftar Pengguna) | ❌ (401) | ❌ (403) | ❌ (403) | ❌ (403) | ✅ |
+| `PATCH /users/:userId/role` (Ubah Role) | ❌ (401) | ❌ (403) | ❌ (403) | ❌ (403) | ✅ |
+| `POST /users` (Buat User Administratif) | ❌ (401) | ❌ (403) | ❌ (403) | ❌ (403) | ✅ |
+| `GET /learning/subjects`, `topics`, `materials` | ✅ | ✅ | ✅ (termasuk draft) | ✅ (termasuk draft) | ✅ (termasuk draft) |
+| `GET /learning/materials/:id/authoring` (Kunci Jawaban) | ❌ (401) | ❌ (403) | ✅ | ✅ | ✅ |
+| `POST /learning/subjects`, `topics`, `materials` (CRUD) | ❌ (401) | ❌ (403) | ✅ | ✅ | ✅ |
+| `POST /learning/assets` (Upload Aset) | ❌ (401) | ❌ (403) | ✅ | ✅ | ✅ |
+| `GET /game/templates`, `/game/player/:id` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `GET/POST /game/modules` (Modul Template) | ❌ (401) | ❌ (403) | ✅ (modul sendiri) | ✅ (semua) | ✅ (semua) |
+| `POST /game/modules` (Modul Custom) | ❌ (401) | ❌ (403) | ❌ (403) | ✅ | ✅ |
+| `PUT /game/versions/:id/files` (Monaco Custom Code) | ❌ (401) | ❌ (403) | ❌ (403) | ✅ | ✅ |
+| `POST /ai/generate`, `/ai/submit` | ✅ / ❌ (401) | ✅ | ✅ | ✅ | ✅ |
+
 ---
 
 ## 3. Akun Bawaan Testing (Seed Dev Users)
@@ -235,6 +260,90 @@ Seluruh akun berikut memiliki password default: **`password123`**
   }
   ```
 * **Expected Response (`200 OK`):** Mengembalikan objek profil yang telah diperbarui.
+
+#### 7. `GET /users`
+* **Use Case:** Halaman Manajemen Pengguna di Dashboard Admin. Digunakan oleh admin untuk melihat seluruh daftar pengguna LMS beserta role dan informasi sekolahnya.
+* **Hak Akses:** Khusus role `admin`. Role lain akan ditolak dengan `403 FORBIDDEN`.
+* **Headers:**
+  * Development: `x-dev-role: admin`
+  * Production: `Authorization: Bearer <ADMIN_TOKEN>`
+* **Query Params (Opsional):**
+  * `role`: Filter berdasarkan role (`student` | `teacher` | `admin` | `developer`)
+  * `search`: Pencarian nama atau email pengguna
+* **Expected Response (`200 OK`):**
+  ```json
+  {
+    "data": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "userId": "00000000-0000-4000-8000-000000000001",
+        "email": "guru@kabiru.id",
+        "fullName": "Guru Penguji",
+        "role": "teacher",
+        "schoolName": "SMA Negeri 1 Kabiru",
+        "educationLevel": "SMA",
+        "phone": null,
+        "avatarUrl": null,
+        "createdAt": "2026-11-14T21:00:00.000Z",
+        "updatedAt": "2026-11-14T21:00:00.000Z"
+      }
+    ],
+    "meta": {
+      "requestId": "..."
+    }
+  }
+  ```
+
+#### 8. `GET /users/:userId`
+* **Use Case:** Melihat detail profil pengguna spesifik.
+* **Hak Akses:** Hanya boleh diakses oleh Admin atau user pemilik akun itu sendiri (`userId === actor.userId`). User lain akan menerima `403 FORBIDDEN`.
+* **Headers:** Bearer Token atau dev role header.
+* **Expected Response (`200 OK`):** Mengembalikan objek profil pengguna.
+
+#### 9. `PATCH /users/:userId/role`
+* **Use Case:** Manajemen RBAC Admin. Mengubah hak akses role pengguna (misalnya mempromosikan siswa menjadi guru, atau menambahkan developer). Perubahan role ini disinkronisasikan ke `auth-service` dan `user-service` sehingga langsung berlaku saat login atau refresh token.
+* **Hak Akses:** Khusus role `admin`. Role lain ditolak `403 FORBIDDEN`.
+* **Headers:**
+  * Development: `x-dev-role: admin`
+  * Production: `Authorization: Bearer <ADMIN_TOKEN>`
+  * `Content-Type: application/json`
+* **Request Body:**
+  ```json
+  {
+    "role": "teacher"
+  }
+  ```
+* **Expected Response (`200 OK`):**
+  ```json
+  {
+    "data": {
+      "userId": "00000000-0000-4000-8000-000000000004",
+      "email": "siswa@kabiru.id",
+      "role": "teacher",
+      "message": "Role pengguna berhasil diperbarui menjadi 'teacher'."
+    },
+    "meta": {
+      "requestId": "..."
+    }
+  }
+  ```
+
+#### 10. `POST /users`
+* **Use Case:** Pendaftaran Pengguna Administratif oleh Admin (misalnya membuat akun pengajar baru atau developer game tanpa melalui registrasi publik).
+* **Hak Akses:** Khusus role `admin`.
+* **Headers:** `x-dev-role: admin`, `Content-Type: application/json`
+* **Request Body:**
+  ```json
+  {
+    "email": "guru.baru@kabiru.id",
+    "password": "password123",
+    "fullName": "Guru Baru",
+    "role": "teacher",
+    "schoolName": "SMA Kabiru",
+    "educationLevel": "SMA"
+  }
+  ```
+* **Expected Response (`201 Created`):** Objek akun dan profil pengguna baru yang dibuat.
 
 ---
 

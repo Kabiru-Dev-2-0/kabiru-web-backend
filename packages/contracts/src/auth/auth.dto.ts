@@ -53,3 +53,38 @@ export interface UserProfileResponse {
     createdAt: string;
     updatedAt: string;
 }
+
+export interface UpdateUserRoleRequest {
+    userId: string;
+    role: UserRole;
+}
+
+export interface AdminCreateUserRequest {
+    email: string;
+    password: string;
+    fullName: string;
+    role: UserRole;
+    phone?: string | null;
+    avatarUrl?: string | null;
+    schoolName?: string | null;
+    educationLevel?: string | null;
+}
+
+export interface UserSummaryItemDto {
+    id: string;
+    userId: string;
+    email: string;
+    fullName: string;
+    role: UserRole;
+    phone?: string | null;
+    avatarUrl?: string | null;
+    schoolName?: string | null;
+    educationLevel?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ListUsersQueryDto {
+    role?: UserRole;
+    search?: string;
+}

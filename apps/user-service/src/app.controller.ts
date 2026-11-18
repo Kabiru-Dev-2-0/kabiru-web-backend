@@ -1,9 +1,11 @@
 import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload, RpcException } from '@nestjs/microservices';
 import {
+  USER_PATTERNS,
   USER_ROLES,
   createServiceError,
   type InternalRequest,
+  type ListUsersQueryDto,
   type UserRole,
 } from '@kabiru/contracts';
 
@@ -216,5 +218,29 @@ export class AppController {
     USERS.set(userId, updated);
     logger.debug(`updateProfile userId=${userId} role=${updated.role}`);
     return updated;
+  }
+
+  @MessagePattern(USER_PATTERNS.PROFILE_LIST)
+  @MessagePattern('user.profile.list')
+  listProfiles(@Payload() rawPayload: unknown) {
+    const payload = unwrapPayload<ListUsersQueryDto>(rawPayload);
+    const filterRole = payload.role;
+    const filterSearch = payload.search?.trim().toLowerCase();
+
+    let list = Array.from(USERS.values());
+
+    if (filterRole && USER_ROLES.includes(filterRole)) {
+      list = list.filter((p) => p.role === filterRole);
+    }
+
+    if (filterSearch) {
+      list = list.filter(
+        (p) =>
+          p.fullName.toLowerCase().includes(filterSearch) ||
+          (p.schoolName && p.schoolName.toLowerCase().includes(filterSearch)),
+      );
+    }
+
+    return list;
   }
 }

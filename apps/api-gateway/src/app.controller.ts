@@ -18,9 +18,13 @@ import { ClientProxy } from '@nestjs/microservices';
 import { randomUUID } from 'node:crypto';
 import { firstValueFrom, timeout as rxTimeout, TimeoutError } from 'rxjs';
 import {
+  ADMIN_ROLES,
   AUTH_PATTERNS,
+  AUTHORING_ROLES,
+  DEVELOPER_AND_ADMIN_ROLES,
   GAME_PATTERNS,
   LEARNING_PATTERNS,
+  USER_PATTERNS,
   USER_ROLES,
   type ActorContext,
   type ApiSuccessResponse,
@@ -41,12 +45,6 @@ const AI_PATTERNS = {
   SUBMIT: 'ai.submit',
 } as const;
 
-const USER_PATTERNS = {
-  PROFILE_CREATE: 'user.profile.create',
-  PROFILE_GET: 'user.profile.get',
-  PROFILE_UPDATE: 'user.profile.update',
-} as const;
-
 const RPC_TIMEOUTS = {
   auth: 3000,
   user: 3000,
@@ -64,8 +62,9 @@ const RPC_TIMEOUTS = {
  * 2) ENABLE_DEV_ACTOR_HEADERS=true diset eksplisit.
  * Opt-in ganda ini mencegah fallback ikut aktif di production hanya karena NODE_ENV lupa diset.
  */
-const DEV_ACTOR_HEADERS_ENABLED =
-  process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_ACTOR_HEADERS === 'true';
+function isDevActorHeadersEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_ACTOR_HEADERS === 'true';
+}
 
 const DEV_FALLBACK_USER_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -90,6 +89,33 @@ interface ForwardOptions {
   timeoutMs?: number;
   /** Actor yang sudah di-resolve sebelumnya, agar tidak verifikasi token dua kali dalam satu request. */
   actor?: ActorContext | null;
+  /** Role yang diizinkan untuk memanggil endpoint ini. Jika actor.role tidak ada di allowedRoles, return 403 Forbidden. */
+  allowedRoles?: readonly UserRole[];
+}
+
+function requireRoles(actor: ActorContext | null, allowedRoles: readonly UserRole[], requestId: string): ActorContext {
+  if (!actor) {
+    throw new UnauthorizedException({
+      error: {
+        code: 'UNAUTHENTICATED',
+        message: 'Autentikasi diperlukan untuk mengakses resource ini.',
+      },
+      meta: { requestId },
+    });
+  }
+  if (!allowedRoles.includes(actor.role)) {
+    throw new HttpException(
+      {
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Role tidak diizinkan melakukan operasi ini.',
+        },
+        meta: { requestId },
+      },
+      HttpStatus.FORBIDDEN,
+    );
+  }
+  return actor;
 }
 
 function normalizeRequestId(input?: string) {
@@ -184,7 +210,7 @@ function normalizeErrorResponse(error: unknown, requestId: string): never {
 }
 
 function resolveDevActor(headers: GatewayHeaders): ActorContext | null {
-  if (!DEV_ACTOR_HEADERS_ENABLED) return null;
+  if (!isDevActorHeadersEnabled()) return null;
 
   const auth = headers.authorization ?? headers.Authorization;
   const bearerValue = auth && /^Bearer\s+/i.test(auth) ? auth.replace(/^Bearer\s+/i, '').trim() : undefined;
@@ -288,16 +314,26 @@ export class AppController {
       : verifyActor(this.authClient, headers);
   }
 
-  /** Satu jalur forwarding untuk semua service: resolve actor -> kirim TCP -> format response. */
+  /** Satu jalur forwarding untuk semua service: resolve actor -> verifikasi role -> kirim TCP -> format response. */
   private async forward(
     client: ClientProxy,
     headers: GatewayHeaders,
     pattern: string,
     data: unknown,
-    { allowAnonymous = false, timeoutMs = RPC_TIMEOUTS.learningRead, actor: preResolved }: ForwardOptions = {},
+    {
+      allowAnonymous = false,
+      timeoutMs = RPC_TIMEOUTS.learningRead,
+      actor: preResolved,
+      allowedRoles,
+    }: ForwardOptions = {},
   ): Promise<ApiSuccessResponse<unknown>> {
     const requestId = getRequestId(headers);
     const actor = preResolved !== undefined ? preResolved : await this.resolveActor(headers, allowAnonymous);
+
+    if (allowedRoles && allowedRoles.length > 0) {
+      requireRoles(actor, allowedRoles, requestId);
+    }
+
     const result = await sendTo<unknown>(client, pattern, data, this.buildMeta(headers, actor), timeoutMs);
     return formatSuccessResponse(requestId, result);
   }
@@ -315,17 +351,30 @@ export class AppController {
     return formatSuccessResponse(requestId, result);
   }
 
-  private learningRead(headers: GatewayHeaders, pattern: string, data: unknown, allowAnonymous = true) {
+  private learningRead(
+    headers: GatewayHeaders,
+    pattern: string,
+    data: unknown,
+    allowAnonymous = true,
+    allowedRoles?: readonly UserRole[],
+  ) {
     return this.forward(this.learningClient, headers, pattern, data, {
       allowAnonymous,
       timeoutMs: RPC_TIMEOUTS.learningRead,
+      allowedRoles,
     });
   }
 
-  private learningWrite(headers: GatewayHeaders, pattern: string, data: unknown) {
+  private learningWrite(
+    headers: GatewayHeaders,
+    pattern: string,
+    data: unknown,
+    allowedRoles: readonly UserRole[] = AUTHORING_ROLES,
+  ) {
     return this.forward(this.learningClient, headers, pattern, data, {
       allowAnonymous: false,
       timeoutMs: RPC_TIMEOUTS.learningWrite,
+      allowedRoles,
     });
   }
 
@@ -397,7 +446,7 @@ export class AppController {
   }
 
   // ==========================================
-  // USERS
+  // USERS & ROLE MANAGEMENT
   // ==========================================
 
   @Get('users/me')
@@ -430,6 +479,188 @@ export class AppController {
       },
       { timeoutMs: RPC_TIMEOUTS.user, actor },
     );
+  }
+
+  /**
+   * GET /v1/users (Khusus Admin)
+   * Mengambil daftar seluruh pengguna dan profilnya untuk manajemen akses & administrasi sekolah.
+   */
+  @Get('users')
+  async listUsers(@Query() query: QueryParams, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await this.resolveActor(headers, false);
+    requireRoles(actor, ADMIN_ROLES, requestId);
+
+    const [authUsers, userProfiles] = await Promise.all([
+      sendTo<Array<{ userId: string; email: string; fullName: string; role: UserRole; createdAt: string; updatedAt: string }>>(
+        this.authClient,
+        AUTH_PATTERNS.LIST_USERS,
+        query,
+        this.buildMeta(headers, actor),
+        RPC_TIMEOUTS.auth,
+      ),
+      sendTo<Array<{ userId: string; fullName: string; role: UserRole; schoolName?: string | null; educationLevel?: string | null; phone?: string | null; avatarUrl?: string | null }>>(
+        this.userClient,
+        USER_PATTERNS.PROFILE_LIST,
+        query,
+        this.buildMeta(headers, actor),
+        RPC_TIMEOUTS.user,
+      ).catch(() => []),
+    ]);
+
+    const profileMap = new Map((userProfiles ?? []).map((p) => [p.userId, p]));
+
+    const merged = (authUsers ?? []).map((u) => {
+      const prof = profileMap.get(u.userId);
+      return {
+        id: u.userId,
+        userId: u.userId,
+        email: u.email,
+        fullName: prof?.fullName || u.fullName,
+        role: u.role,
+        schoolName: prof?.schoolName ?? null,
+        educationLevel: prof?.educationLevel ?? null,
+        phone: prof?.phone ?? null,
+        avatarUrl: prof?.avatarUrl ?? null,
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
+      };
+    });
+
+    return formatSuccessResponse(requestId, merged);
+  }
+
+  /**
+   * GET /v1/users/:userId
+   * Mengambil detail profil user tertentu. Hanya boleh diakses oleh Admin atau user pemilik akun itu sendiri.
+   */
+  @Get('users/:userId')
+  async getUserDetail(@Param('userId') userId: string, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await this.resolveActor(headers, false);
+    if (!actor || (actor.role !== 'admin' && actor.userId !== userId)) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Hanya Admin atau pemilik akun yang dapat melihat detail user ini.',
+          },
+          meta: { requestId },
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    return this.forward(
+      this.userClient,
+      headers,
+      USER_PATTERNS.PROFILE_GET,
+      { userId },
+      { timeoutMs: RPC_TIMEOUTS.user, actor },
+    );
+  }
+
+  /**
+   * PATCH /v1/users/:userId/role (Khusus Admin)
+   * Mengubah hak akses role pengguna (student, teacher, developer, admin).
+   * Menyelaraskan role di auth-service dan user-service secara sinkron.
+   */
+  @Patch('users/:userId/role')
+  async updateUserRole(
+    @Param('userId') userId: string,
+    @Body() body: JsonBody,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    const requestId = getRequestId(headers);
+    const actor = await this.resolveActor(headers, false);
+    requireRoles(actor, ADMIN_ROLES, requestId);
+
+    const newRole = body?.role as UserRole;
+    if (!newRole || !USER_ROLES.includes(newRole)) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `Role tidak valid. Pilihan role: ${USER_ROLES.join(', ')}.`,
+          },
+          meta: { requestId },
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // 1. Update di auth-service
+    const authResult = await sendTo<{ userId: string; role: UserRole; email: string }>(
+      this.authClient,
+      AUTH_PATTERNS.UPDATE_ROLE,
+      { userId, role: newRole },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.auth,
+    );
+
+    // 2. Update di user-service
+    await sendTo<unknown>(
+      this.userClient,
+      USER_PATTERNS.PROFILE_UPDATE,
+      { userId, role: newRole },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.user,
+    ).catch((err) => {
+      console.warn('[Gateway] Gagal sinkronisasi update role di user-service:', err);
+    });
+
+    return formatSuccessResponse(requestId, {
+      userId: authResult.userId,
+      email: authResult.email,
+      role: authResult.role,
+      message: `Role pengguna berhasil diperbarui menjadi '${authResult.role}'.`,
+    });
+  }
+
+  /**
+   * POST /v1/users (Khusus Admin)
+   * Menambahkan pengguna baru secara administratif dengan penentuan role eksplisit.
+   */
+  @Post('users')
+  async adminCreateUser(@Body() body: JsonBody, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await this.resolveActor(headers, false);
+    requireRoles(actor, ADMIN_ROLES, requestId);
+
+    const authResult = await sendTo<{
+      userId: string;
+      email: string;
+      fullName: string;
+      role: UserRole;
+    }>(
+      this.authClient,
+      AUTH_PATTERNS.ADMIN_CREATE_USER,
+      body,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.auth,
+    );
+
+    try {
+      await sendTo<unknown>(
+        this.userClient,
+        USER_PATTERNS.PROFILE_CREATE,
+        {
+          userId: authResult.userId,
+          fullName: authResult.fullName,
+          role: authResult.role,
+          phone: body.phone,
+          avatarUrl: body.avatarUrl,
+          schoolName: body.schoolName,
+          educationLevel: body.educationLevel,
+        },
+        this.buildMeta(headers, actor),
+        RPC_TIMEOUTS.user,
+      );
+    } catch (err) {
+      console.warn('[Gateway] Gagal sinkronisasi profil user administratif baru:', err);
+    }
+
+    return formatSuccessResponse(requestId, authResult);
   }
 
   // ==========================================
@@ -468,7 +699,7 @@ export class AppController {
   // Route statis '/authoring' dideklarasikan sebelum ':materialId' agar urutan matching eksplisit.
   @Get('learning/materials/:materialId/authoring')
   materialAuthoringDetail(@Param('materialId') materialId: string, @Headers() headers: GatewayHeaders) {
-    return this.learningRead(headers, LEARNING_PATTERNS.MATERIAL_GET_AUTHORING, { materialId }, false);
+    return this.learningRead(headers, LEARNING_PATTERNS.MATERIAL_GET_AUTHORING, { materialId }, false, AUTHORING_ROLES);
   }
 
   @Get('learning/materials/:materialId')
@@ -567,17 +798,18 @@ export class AppController {
 
   @Get('game/modules')
   gameModules(@Query() query: QueryParams, @Headers() headers: GatewayHeaders) {
-    return this.learningRead(headers, GAME_PATTERNS.MODULE_LIST, query, false);
+    return this.learningRead(headers, GAME_PATTERNS.MODULE_LIST, query, false, AUTHORING_ROLES);
   }
 
   @Post('game/modules')
   createGameModule(@Body() body: JsonBody, @Headers() headers: GatewayHeaders) {
-    return this.learningWrite(headers, GAME_PATTERNS.MODULE_CREATE, body);
+    const allowedRoles = body?.source === 'custom' ? DEVELOPER_AND_ADMIN_ROLES : AUTHORING_ROLES;
+    return this.learningWrite(headers, GAME_PATTERNS.MODULE_CREATE, body, allowedRoles);
   }
 
   @Get('game/modules/:moduleId')
   gameModuleDetail(@Param('moduleId') moduleId: string, @Headers() headers: GatewayHeaders) {
-    return this.learningRead(headers, GAME_PATTERNS.MODULE_GET_DETAIL, { moduleId }, false);
+    return this.learningRead(headers, GAME_PATTERNS.MODULE_GET_DETAIL, { moduleId }, false, AUTHORING_ROLES);
   }
 
   @Patch('game/modules/:moduleId')
@@ -586,12 +818,12 @@ export class AppController {
     @Body() body: JsonBody,
     @Headers() headers: GatewayHeaders,
   ) {
-    return this.learningWrite(headers, GAME_PATTERNS.MODULE_UPDATE, { ...body, moduleId });
+    return this.learningWrite(headers, GAME_PATTERNS.MODULE_UPDATE, { ...body, moduleId }, AUTHORING_ROLES);
   }
 
   @Delete('game/modules/:moduleId')
   deleteGameModule(@Param('moduleId') moduleId: string, @Headers() headers: GatewayHeaders) {
-    return this.learningWrite(headers, GAME_PATTERNS.MODULE_DELETE, { moduleId });
+    return this.learningWrite(headers, GAME_PATTERNS.MODULE_DELETE, { moduleId }, AUTHORING_ROLES);
   }
 
   // ==========================================
@@ -604,12 +836,12 @@ export class AppController {
     @Body() body: JsonBody,
     @Headers() headers: GatewayHeaders,
   ) {
-    return this.learningWrite(headers, GAME_PATTERNS.VERSION_CREATE_DRAFT, { ...body, moduleId });
+    return this.learningWrite(headers, GAME_PATTERNS.VERSION_CREATE_DRAFT, { ...body, moduleId }, AUTHORING_ROLES);
   }
 
   @Get('game/versions/:versionId')
   gameVersionDetail(@Param('versionId') versionId: string, @Headers() headers: GatewayHeaders) {
-    return this.learningRead(headers, GAME_PATTERNS.VERSION_GET_DETAIL, { versionId }, false);
+    return this.learningRead(headers, GAME_PATTERNS.VERSION_GET_DETAIL, { versionId }, false, AUTHORING_ROLES);
   }
 
   @Patch('game/versions/:versionId/config')
@@ -618,7 +850,7 @@ export class AppController {
     @Body() body: JsonBody,
     @Headers() headers: GatewayHeaders,
   ) {
-    return this.learningWrite(headers, GAME_PATTERNS.VERSION_UPDATE_CONFIG, { ...body, versionId });
+    return this.learningWrite(headers, GAME_PATTERNS.VERSION_UPDATE_CONFIG, { ...body, versionId }, AUTHORING_ROLES);
   }
 
   @Put('game/versions/:versionId/files')
@@ -627,7 +859,12 @@ export class AppController {
     @Body() body: JsonBody,
     @Headers() headers: GatewayHeaders,
   ) {
-    return this.learningWrite(headers, GAME_PATTERNS.VERSION_SAVE_CUSTOM_FILES, { ...body, versionId });
+    return this.learningWrite(
+      headers,
+      GAME_PATTERNS.VERSION_SAVE_CUSTOM_FILES,
+      { ...body, versionId },
+      DEVELOPER_AND_ADMIN_ROLES,
+    );
   }
 
   @Post('game/versions/:versionId/publish')
@@ -636,7 +873,7 @@ export class AppController {
     @Body() body: JsonBody,
     @Headers() headers: GatewayHeaders,
   ) {
-    return this.learningWrite(headers, GAME_PATTERNS.VERSION_PUBLISH, { ...body, versionId });
+    return this.learningWrite(headers, GAME_PATTERNS.VERSION_PUBLISH, { ...body, versionId }, AUTHORING_ROLES);
   }
 
   // ==========================================
