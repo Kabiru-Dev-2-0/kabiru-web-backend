@@ -7,6 +7,7 @@
     "start:prod": "bun run dist/main.js"
   },
   "dependencies": {
+    "@kabiru/contracts": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/microservices": "^11.0.0",

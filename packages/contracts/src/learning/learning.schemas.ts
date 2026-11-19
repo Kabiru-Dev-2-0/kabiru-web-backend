@@ -49,6 +49,11 @@ export const ListMaterialsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+// Params: GET /learning/materials/:materialId
+export const GetMaterialDetailParamsSchema = z.object({
+  materialId: UuidSchema,
+});
+
 export const CreateSubjectSchema = z.object({
   educationLevelCode: z.enum(EDUCATION_LEVEL_CODES),
   name: z.string().trim().min(2, 'Nama mata pelajaran minimal 2 karakter').max(150),
@@ -112,9 +117,55 @@ export const TestAnswerKeySchema = z
 export type ListSubjectsQueryDto = z.infer<typeof ListSubjectsQuerySchema>;
 export type ListTopicsQueryDto = z.infer<typeof ListTopicsQuerySchema>;
 export type ListMaterialsQueryDto = z.infer<typeof ListMaterialsQuerySchema>;
+export type GetMaterialDetailParamsDto = z.infer<typeof GetMaterialDetailParamsSchema>;
 export type CreateSubjectDto = z.infer<typeof CreateSubjectSchema>;
 export type UpdateSubjectDto = z.infer<typeof UpdateSubjectSchema>;
 export type CreateTopicDto = z.infer<typeof CreateTopicSchema>;
 export type UpdateTopicDto = z.infer<typeof UpdateTopicSchema>;
 export type CreateMaterialDto = z.infer<typeof CreateMaterialSchema>;
 export type UpdateMaterialDto = z.infer<typeof UpdateMaterialSchema>;
+
+// Skema Param ID untuk Operasi CRUD
+export const SubjectIdParamSchema = z.object({ subjectId: UuidSchema });
+export const TopicIdParamSchema = z.object({ topicId: UuidSchema });
+export const MaterialIdParamSchema = z.object({ materialId: UuidSchema });
+
+// Skema Payload Update (ID + field parsial)
+export const UpdateSubjectPayloadSchema = SubjectIdParamSchema.merge(UpdateSubjectSchema);
+export const UpdateTopicPayloadSchema = TopicIdParamSchema.merge(UpdateTopicSchema);
+export const UpdateMaterialPayloadSchema = MaterialIdParamSchema.merge(UpdateMaterialSchema);
+
+// Ekspor Type Inference
+export type SubjectIdParamDto = z.infer<typeof SubjectIdParamSchema>;
+export type TopicIdParamDto = z.infer<typeof TopicIdParamSchema>;
+export type MaterialIdParamDto = z.infer<typeof MaterialIdParamSchema>;
+export type UpdateSubjectPayloadDto = z.infer<typeof UpdateSubjectPayloadSchema>;
+export type UpdateTopicPayloadDto = z.infer<typeof UpdateTopicPayloadSchema>;
+export type UpdateMaterialPayloadDto = z.infer<typeof UpdateMaterialPayloadSchema>;
+
+// Skema Upload & Detail Asset Umum LMS (Cover Topik, Cover Materi, Icon Badge, Dokumen)
+export const AssetKindSchema = z.enum(['image', 'audio', 'script', 'bundle', 'document']);
+
+export const UploadAssetSchema = z.object({
+  kind: AssetKindSchema.default('image'),
+  fileName: z
+    .string()
+    .trim()
+    .min(1, 'Nama file wajib diisi')
+    .max(150, 'Nama file maksimal 150 karakter')
+    .regex(
+      /^[a-zA-Z0-9._-]+$/,
+      'Nama file hanya boleh memuat huruf, angka, titik (.), garis bawah (_), dan minus (-)',
+    ),
+  mimeType: z.string().trim().min(1).max(100),
+  content: z.string().min(1, 'Konten file tidak boleh kosong'),
+  encoding: z.enum(['utf8', 'base64']).default('base64'),
+  folder: z.enum(['topics', 'materials', 'badges', 'general']).default('general'),
+});
+
+export const AssetIdParamSchema = z.object({
+  assetId: UuidSchema,
+});
+
+export type UploadAssetDto = z.infer<typeof UploadAssetSchema>;
+export type AssetIdParamDto = z.infer<typeof AssetIdParamSchema>;

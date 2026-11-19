@@ -5,4 +5,8 @@ export * from './patterns/learning.patterns';
 export * from './learning/learning.dto';
 export * from './learning/learning.schemas';
 export * from './patterns/auth.patterns';
+export * from './patterns/user.patterns';
 export * from './auth/auth.dto';
+export * from './patterns/game.patterns';
+export * from './game/game.dto';
+export * from './game/game.schemas';

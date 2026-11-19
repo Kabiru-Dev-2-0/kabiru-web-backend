@@ -1,0 +1,24 @@
+# Dependencies & build outputs
+**/node_modules
+**/dist
+.local-r2-storage
+apps/learning-service/.local-r2-storage
+
+# Git & CI
+.git
+.gitignore
+.github
+
+# Environment & secrets (NEVER bake into image)
+.env
+.env.*
+!.env.example
+apps/*/.env
+apps/*/.env.*
+
+# Docs & IDE
+docs
+README.md
+*.log
+.vscode
+.idea

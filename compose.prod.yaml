@@ -1,0 +1,151 @@
+name: kabiru-prod
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kabiru}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib diisi di .env VPS}
+      POSTGRES_DB: ${POSTGRES_DB:-kabiru}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init-databases.sh:ro
+    networks:
+      - kabiru_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-kabiru} -d $${POSTGRES_DB:-kabiru}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - kabiru_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  # Job khusus migrasi database (dipisahkan dari startup aplikasi)
+  # Dijalankan secara eksplisit oleh CI/CD: docker compose -f compose.prod.yaml --profile tools run --rm learning-migrate
+  learning-migrate:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-learning-service:${IMAGE_TAG:-main}
+    profiles: ["tools"]
+    command: ["bun", "run", "prisma:deploy"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL wajib diisi di .env VPS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kabiru_internal
+
+  auth-service:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-auth-service:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVICE_PORT: 4011
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET wajib diisi di .env VPS}
+    networks:
+      - kabiru_internal
+
+  user-service:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-user-service:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVICE_PORT: 4012
+    networks:
+      - kabiru_internal
+
+  learning-service:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-learning-service:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVICE_PORT: 4013
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL wajib diisi di .env VPS}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-kabiru-assets}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-http://149.41.198.191:3000/assets}
+    volumes:
+      - learning_storage:/app/apps/learning-service/.local-r2-storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kabiru_internal
+
+  progress-service:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-progress-service:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVICE_PORT: 4014
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - kabiru_internal
+
+  ai-service:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-ai-service:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVICE_PORT: 4016
+      HTTP_PORT: 4015
+      OLLAMA_URL: ${OLLAMA_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-its-codellama-7b:latest}
+    networks:
+      - kabiru_internal
+
+  api-gateway:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-api-gateway:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 3000
+      ENABLE_DEV_ACTOR_HEADERS: "false"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
+      AUTH_SERVICE_HOST: auth-service
+      AUTH_SERVICE_PORT: 4011
+      USER_SERVICE_HOST: user-service
+      USER_SERVICE_PORT: 4012
+      LEARNING_SERVICE_HOST: learning-service
+      LEARNING_SERVICE_PORT: 4013
+      PROGRESS_SERVICE_HOST: progress-service
+      PROGRESS_SERVICE_PORT: 4014
+      AI_SERVICE_HOST: ai-service
+      AI_SERVICE_PORT: 4016
+    depends_on:
+      - auth-service
+      - user-service
+      - learning-service
+      - progress-service
+      - ai-service
+    networks:
+      - kabiru_internal
+
+networks:
+  kabiru_internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  learning_storage:

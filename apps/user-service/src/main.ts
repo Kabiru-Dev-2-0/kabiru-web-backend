@@ -1,4 +1,15 @@
 import 'reflect-metadata';
+import { resolve } from 'node:path';
+
+// Load root .env secara transparan
+try {
+  process.loadEnvFile?.(resolve(process.cwd(), '.env'));
+} catch {
+  try {
+    process.loadEnvFile?.(resolve(process.cwd(), '../../.env'));
+  } catch {}
+}
+
 import { NestFactory } from '@nestjs/core';
 import { Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
