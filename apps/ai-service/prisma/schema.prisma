@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model LearningSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz()
+  endedAt    DateTime? @map("ended_at") @db.Timestamptz()
+
+  aiInteractions AiInteraction[]
+  hintRequests   HintRequest[]
+
+  @@map("learning_session")
+}
+
+model HintRequest {
+  id                         String   @id @default(uuid()) @db.Uuid
+  sessionId                  String   @map("session_id") @db.Uuid
+  userId                     String   @map("user_id") @db.Uuid
+  testId                     String   @map("test_id") @db.Uuid
+  submissionId               String   @map("submission_id") @db.Uuid
+  wrongAttemptsCountSnapshot Int      @default(0) @map("wrong_attempts_count_snapshot")
+  hintLevel                  Int      @map("hint_level") @db.SmallInt
+  studentResponse            String   @map("student_response") @db.Text
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  errorContext               Json?    @map("error_context") @db.JsonB
+
+  session    LearningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  hintOutput HintOutput?
+
+  @@map("hint_request")
+}
+
+model HintOutput {
+  id            String   @id @default(uuid()) @db.Uuid
+  hintRequestId String   @unique @map("hint_request_id") @db.Uuid
+  generatedHint String   @map("generated_hint") @db.Text
+  modelName     String   @map("model_name") @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  hintRequest HintRequest @relation(fields: [hintRequestId], references: [id], onDelete: Cascade)
+
+  @@map("hint_output")
+}
+
+model AiInteraction {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  sequenceNo     Int      @map("sequence_no")
+  materialId     String?  @map("material_id") @db.Uuid
+  testId         String?  @map("test_id") @db.Uuid
+  studentMessage String   @map("student_message") @db.Text
+  agentResponse  String   @map("agent_response") @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  sessionId      String   @map("session_id") @db.Uuid
+
+  session             LearningSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  emotionClassification EmotionClassification?
+
+  @@map("ai_interaction")
+}
+
+model EmotionClassification {
+  id              String   @id @default(uuid()) @db.Uuid
+  emotionLabel    String   @map("emotion_label") @db.VarChar(100)
+  confidenceScore Decimal  @map("confidence_score") @db.Decimal(5, 4)
+  interactionId   String   @unique @map("interaction_id") @db.Uuid
+  thresholdStatus Boolean  @map("threshold_status")
+  modelName       String   @map("model_name") @db.VarChar(100)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  interaction      AiInteraction     @relation(fields: [interactionId], references: [id], onDelete: Cascade)
+  emotionFeedbacks EmotionFeedback[]
+
+  @@map("emotion_classification")
+}
+
+model AgentAnimation {
+  id           String @id @default(uuid()) @db.Uuid
+  code         String @unique @db.VarChar(100)
+  name         String @db.VarChar(150)
+  emotionLabel String @map("emotion_label") @db.VarChar(100)
+  assetId      String @map("asset_id") @db.Uuid
+
+  emotionFeedbacks EmotionFeedback[]
+
+  @@map("agent_animation")
+}
+
+model EmotionFeedback {
+  id               String   @id @default(uuid()) @db.Uuid
+  classificationId String   @map("classification_id") @db.Uuid
+  feedbackText     String   @map("feedback_text") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  animationId      String   @map("animation_id") @db.Uuid
+
+  classification EmotionClassification @relation(fields: [classificationId], references: [id], onDelete: Cascade)
+  animation      AgentAnimation        @relation(fields: [animationId], references: [id])
+
+  @@map("emotion_feedback")
+}

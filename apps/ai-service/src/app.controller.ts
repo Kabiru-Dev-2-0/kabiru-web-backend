@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
-import { AppService } from './app.service';
+import { AppService, GenerateHintDto } from './app.service';
 
 @Controller()
 export class AppController {
@@ -25,6 +25,14 @@ export class AppController {
   @Get('ollama-status')
   async ollamaStatusHttp() {
     return this.ollamaStatus();
+  }
+
+  
+  // GEMINI HINT
+  @Post('v1/ai/hints')
+  @Post('hints')
+  async generateHintHttp(@Body() body: GenerateHintDto) {
+    return this.appService.generateHint(body);
   }
 
   // TCP Microservice message patterns (for internal service-to-service communication)
@@ -69,5 +77,16 @@ export class AppController {
   @MessagePattern('ai.ollama.status')
   async ollamaStatus() {
     return this.appService.checkOllamaConnection();
+  }
+
+  // GEMINI HINT (TCP CONTRACT)
+  @MessagePattern('ai.hint.generate')
+  @MessagePattern({ cmd: 'ai.hint.generate' })
+  async generateHintTcp(@Payload() payload: any) {
+    const data =
+      payload && typeof payload === 'object' && 'data' in payload && payload.data
+        ? payload.data
+        : payload;
+    return this.appService.generateHint(data);
   }
 }
