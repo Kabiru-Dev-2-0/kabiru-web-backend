@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "start:dev": "bun --env-file=.env --env-file=apps/ai-service/.env nest start --watch",
-    "build": "nest build",
+    "build": "prisma generate && nest build",
     "start:prod": "bun run dist/main.js"
   },
   "dependencies": {
