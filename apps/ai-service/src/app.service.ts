@@ -53,14 +53,18 @@ export interface OllamaAssessmentResult {
   level: string;
 }
 
-// 6 tipe soal standar kurikulum KKA (enum value final menunggu diskusi dengan Achmad).
+// 6 tipe soal utama kurikulum KKA + 4 tipe template Game Module (sinkron dengan @kabiru/contracts)
 export type HintQuestionType =
   | 'multiple_choice'
   | 'fill_blank'
   | 'true_false'
   | 'multi_select'
+  | 'checkbox'
   | 'sorting'
-  | 'drag_drop';
+  | 'drag_drop'
+  | 'pattern_painter'
+  | 'maze_runner'
+  | 'code_debugger';
 
 // Payload request sesuai kolom tabel 'hint_request' dan tabel 'test' di ERD.
 export interface GenerateHintDto {
@@ -107,9 +111,7 @@ export class AppService {
   ];
 
   constructor(private readonly prisma: PrismaService) {
-    const host = process.env.AI_SERVICE_HOST ?? 'localhost';
-    const port = process.env.AI_SERVICE_PORT ?? '11434';
-    this.ollamaUrl = process.env.OLLAMA_URL ?? `http://${host}:${port}`;
+    this.ollamaUrl = process.env.OLLAMA_URL ?? 'http://localhost:11434';
     this.ollamaModel = process.env.OLLAMA_MODEL ?? 'its-codellama-7b:latest';
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -160,6 +162,10 @@ export class AppService {
           Berikan kriteria untuk mengevaluasi setiap pilihan.
           Jangan mengungkap kombinasi pilihan yang benar.
 
+- checkbox:
+          Berikan kriteria untuk mengevaluasi setiap opsi yang tersedia.
+          Jangan mengungkap kombinasi opsi yang harus dicentang.
+
 - sorting:
           Arahkan siswa memahami prinsip atau ketergantungan dalam urutan.
           Jangan memberikan urutan akhir.
@@ -167,6 +173,18 @@ export class AppService {
 - drag_drop:
           Jelaskan karakteristik atau fungsi elemen yang perlu dicocokkan.
           Jangan memberikan seluruh pasangan atau posisi yang benar.
+
+- pattern_painter:
+          Arahkan siswa mengamati pola pengulangan warna, baris, kolom, atau aturan koordinat.
+          Jangan langsung menyebutkan petak atau koordinat mana yang harus diwarnai.
+
+- maze_runner:
+          Bantu siswa memikirkan logika pergerakan, arah, atau struktur kontrol (perulangan/kondisi) yang dibutuhkan.
+          Jangan memberikan urutan langkah rute secara langsung.
+
+- code_debugger:
+          Arahkan siswa memeriksa bagian kode, tipe kesalahan, atau alur logika yang bermasalah.
+          Jangan langsung memberikan potongan kode perbaikan yang siap salin.
 
         ATURAN BERDASARKAN LEVEL HINT:
 - Level 1:

@@ -79,7 +79,7 @@ export class AppController {
     return this.appService.checkOllamaConnection();
   }
 
-  // GEMINI HINT (TCP CONTRACT)
+  /// GEMINI HINT (TCP CONTRACT)
   @MessagePattern('ai.hint.generate')
   @MessagePattern({ cmd: 'ai.hint.generate' })
   async generateHintTcp(@Payload() payload: any) {
@@ -87,6 +87,10 @@ export class AppController {
       payload && typeof payload === 'object' && 'data' in payload && payload.data
         ? payload.data
         : payload;
-    return this.appService.generateHint(data);
+    const actorUserId = payload?.meta?.actor?.userId;
+    return this.appService.generateHint({
+      ...data,
+      userId: data?.userId ?? actorUserId,
+    });
   }
 }
