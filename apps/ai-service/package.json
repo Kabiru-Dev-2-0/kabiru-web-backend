@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "start:dev": "bun --env-file=.env --env-file=apps/ai-service/.env nest start --watch",
-    "build": "prisma generate && nest build",
+    "build": "DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy bunx prisma generate && nest build",
     "start:prod": "bun run dist/main.js"
   },
   "dependencies": {
