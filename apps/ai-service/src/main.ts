@@ -19,8 +19,8 @@ async function bootstrap() {
 
   app.enableCors();
 
-  const tcpPort = Number(process.env.SERVICE_PORT ?? process.env.AI_SERVICE_PORT ?? 4016);
-  const httpPort = Number(process.env.HTTP_PORT ?? process.env.AI_SERVICE_HTTP_PORT ?? 4015);
+  const tcpPort = Number(process.env.SERVICE_PORT ?? process.env.AI_SERVICE_PORT ?? 4015);
+  const httpPort = Number(process.env.HTTP_PORT ?? process.env.AI_SERVICE_HTTP_PORT ?? 4016);
 
   app.connectMicroservice({
     transport: Transport.TCP,
