@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// CHALLENGE
+// ==========================================
+
+model Challenge {
+  id                 String   @id @db.Uuid
+  code               String   @unique @db.VarChar
+  type               String
+  educationLevelId   String   @map("education_level_id") @db.Uuid
+  menu               String   @db.VarChar
+  period             String   @db.VarChar
+  rule               Json
+  payload            Json
+  gameModuleVersionId String  @map("game_module_version_id") @db.Uuid
+  maxScore           Int      @map("max_score")
+  title              String   @db.VarChar
+  description        String   @db.Text
+  isActive           Boolean  @map("is_active")
+  startsAt           DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt             DateTime @map("ends_at") @db.Timestamptz(6)
+
+  progressChallenges ProgressChallenge[]
+  tiers              ChallengeTier[]
+
+  @@map("challenge")
+}
+
+model ProgressChallenge {
+  userId      String   @map("user_id") @db.Uuid
+  challengeId String   @map("challenge_id") @db.Uuid
+  periodStart DateTime @map("period_start") @db.Date
+  currentValue Int     @map("current_value")
+  bestValue    Int     @map("best_value")
+  updatedAt    DateTime @map("updated_at") @db.Timestamptz(6)
+
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+
+  @@id([userId, challengeId, periodStart])
+  @@map("progress_challenge")
+}
+
+model ChallengeTier {
+  id          String @id @db.Uuid
+  challengeId String @map("challenge_id") @db.Uuid
+  tier        String
+  threshold   Int
+  rewardExp   Int    @map("reward_exp")
+  badgeId     String @map("badge_id") @db.Uuid
+
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+  badge     Badge     @relation(fields: [badgeId], references: [id])
+
+  @@map("challenge_tier")
+}
+
+// ==========================================
+// BADGE
+// ==========================================
+
+model Badge {
+  id          String @id @db.Uuid
+  code        String @unique @db.VarChar
+  name        String @db.VarChar
+  description String @db.Text
+  criteria    Json
+  targetValue Int    @map("target_value")
+  iconAssetId String @map("icon_asset_id") @db.Uuid
+
+  challengeTiers ChallengeTier[]
+  progressBadges ProgressBadge[]
+  userBadges     UserBadge[]
+
+  @@map("badge")
+}
+
+model ProgressBadge {
+  userId      String   @map("user_id") @db.Uuid
+  badgeId     String   @map("badge_id") @db.Uuid
+  currentValue Int     @map("current_value")
+  targetValue  Int     @map("target_value")
+  updatedAt    DateTime @map("updated_at") @db.Timestamptz(6)
+
+  badge Badge @relation(fields: [badgeId], references: [id])
+
+  @@id([userId, badgeId])
+  @@map("progress_badge")
+}
+
+model UserBadge {
+  badgeId   String   @map("badge_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  awardedAt DateTime @map("awarded_at") @db.Timestamptz(6)
+
+  badge Badge @relation(fields: [badgeId], references: [id])
+
+  @@id([badgeId, userId])
+  @@map("user_badge")
+}
+
+// ==========================================
+// RANK
+// ==========================================
+
+model UserRank {
+  userId        String   @map("user_id") @db.Uuid
+  menu          String   @db.VarChar
+  averagePoint  Decimal  @map("average_point")
+  rankTierId    String   @map("rank_tier_id") @db.Uuid
+  updatedAt     DateTime @map("updated_at") @db.Timestamptz(6)
+
+  rankTier RankTier @relation(fields: [rankTierId], references: [id])
+
+  @@id([userId, menu])
+  @@map("user_rank")
+}
+
+model RankTier {
+  id             String  @id @db.Uuid
+  name           String  @unique @db.VarChar
+  minAveragePoint Decimal @map("min_average_point")
+  maxAveragePoint Decimal @map("max_average_point")
+
+  userRanks UserRank[]
+
+  @@map("rank_tier")
+}
+
+// ==========================================
+// LEVEL
+// ==========================================
+
+model Level {
+  id       String @id @db.Uuid
+  name     String @unique @db.VarChar
+  minExp   Int    @unique @map("min_exp")
+  iconAssetId String @map("icon_asset_id") @db.Uuid
+
+  @@map("level")
+}
+
+// ==========================================
+// DAILY ACTIVITY
+// ==========================================
+
+model DailyActivity {
+  userId       String   @map("user_id") @db.Uuid
+  activityDate DateTime @map("activity_date") @db.Date
+  expEarned    Int      @map("exp_earned")
+  testsDone    Int      @map("tests_done")
+  loggedIn     Boolean  @map("logged_in")
+  freezeUsed   Boolean  @map("freeze_used")
+
+  @@id([userId, activityDate])
+  @@map("daily_activity")
+}
+
+// ==========================================
+// MASTERY RULE
+// ==========================================
+
+model MasteryRule {
+  id        String  @id @db.Uuid
+  mastery   String  @unique
+  baseExp   Int     @map("base_exp")
+  expBonus  Int     @map("exp_bonus")
+  rankPoint Decimal @map("rank_point")
+
+  @@map("mastery_rule")
+}
+
+// ==========================================
+// EXP TRANSACTION
+// ==========================================
+
+model ExpTransaction {
+  id         String   @id @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  amount     Int
+  sourceType String   @map("source_type")
+  sourceId   String   @map("source_id") @db.Uuid
+  createdAt  DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@map("exp_transaction")
+}
+
+// ==========================================
+// USER STAT
+// ==========================================
+
+model UserStat {
+  userId          String   @id @map("user_id") @db.Uuid
+  totalExp        BigInt   @map("total_exp")
+  currentStreak   Int      @map("current_streak")
+  longestStreak   Int      @map("longest_streak")
+  lastActivityDate DateTime? @map("last_activity_date") @db.Date
+  streakFreezeCount Int    @map("streak_freeze_count")
+  dailyTarget     Int      @map("daily_target")
+  updatedAt       DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("user_stat")
+}
