@@ -87,4 +87,5 @@ export interface UserSummaryItemDto {
 export interface ListUsersQueryDto {
     role?: UserRole;
     search?: string;
+    userIds?: string[];
 }

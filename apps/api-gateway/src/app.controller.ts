@@ -26,11 +26,14 @@ import {
   LEARNING_PATTERNS,
   USER_PATTERNS,
   USER_ROLES,
+  PROGRESS_PATTERNS,
   type ActorContext,
   type ApiSuccessResponse,
   type InternalRequest,
   type PaginationMeta,
   type UserRole,
+  type LeaderboardEntryDto,
+  type LeaderboardResultDto,
 } from '@kabiru/contracts';
 
 type GatewayHeaders = Record<string, string | undefined>;
@@ -937,5 +940,74 @@ export class AppController {
       },
       HttpStatus.NOT_IMPLEMENTED,
     );
+  }
+
+    /**
+   * GET /v1/progress/leaderboard
+   *
+   * Mengambil leaderboard mingguan dari progress-service.
+   * Profil pengguna dilengkapi melalui user-service.
+   */
+  @Get('progress/leaderboard')
+  async getLeaderboard(
+    @Query() query: QueryParams,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    const actor = await this.resolveActor(
+      headers,
+      false,
+    );
+
+    const requestId = getRequestId(headers);
+
+    const result = await sendTo<LeaderboardResultDto>(
+      this.progressClient,
+      PROGRESS_PATTERNS.LEADERBOARD_GET,
+      query,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.progressRead,
+    );
+
+    const userIds = result.items.map((item) => item.userId);
+    const profiles = userIds.length === 0
+      ? []
+      : await sendTo<
+          Array<{
+            userId: string;
+            fullName: string;
+            avatarUrl?: string | null;
+          }>
+        >(
+          this.userClient,
+          USER_PATTERNS.PROFILE_LIST,
+          { userIds },
+          this.buildMeta(headers, actor),
+          RPC_TIMEOUTS.user,
+        ).catch(() => []);
+
+    const profileMap = new Map(
+      (profiles ?? []).map((profile) => [
+        profile.userId,
+        profile,
+      ]),
+    );
+
+    const enrichedItems: LeaderboardEntryDto[] =
+      result.items.map((item) => {
+        const profile = profileMap.get(item.userId);
+
+        return {
+          ...item,
+
+          fullName: profile?.fullName ?? null,
+
+          avatarUrl: profile?.avatarUrl ?? null,
+        };
+      });
+
+    return formatSuccessResponse(requestId, {
+      items: enrichedItems,
+      pagination: result.pagination,
+    });
   }
 }
