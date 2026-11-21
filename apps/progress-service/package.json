@@ -2,17 +2,18 @@
   "name": "@progress-service/progress-service",
   "private": true,
   "scripts": {
+    "test": "bun test",
     "start:dev": "bun run prisma:generate && nest start --watch",
     "build": "bun run prisma:generate && nest build",
     "start:prod": "bun run dist/main.js",
-    "prisma:generate": "bun --env-file=../../.env prisma generate",
-    "db:seed": "bun run prisma:generate && bun --env-file=../../.env prisma migrate deploy && bun --env-file=../../.env prisma/seed.ts",
-    "prisma:seed": "bun run prisma:generate && bun --env-file=../../.env prisma/seed.ts",
-    "prisma:db:seed": "bun run prisma:generate && bun --env-file=../../.env prisma db seed",
-    "prisma:migrate": "bun --env-file=../../.env prisma migrate dev",
-    "prisma:deploy": "bun --env-file=../../.env prisma migrate deploy",
-    "prisma:status": "bun --env-file=../../.env prisma migrate status",
-    "prisma:studio": "bun --env-file=../../.env prisma studio"
+    "prisma:generate": "prisma generate",
+    "db:seed": "bun run prisma:generate && prisma migrate deploy && bun run prisma/seed.ts",
+    "prisma:seed": "bun run prisma:generate && bun run prisma/seed.ts",
+    "prisma:db:seed": "bun run prisma:generate && prisma db seed",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:status": "prisma migrate status",
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@kabiru/contracts": "workspace:*",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
+    "@types/bun": "^1.4.5",
     "@types/node": "^22.0.0",
     "prisma": "^6.4.0",
     "typescript": "^5.7.0"

@@ -4,6 +4,6 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
     path: 'prisma/migrations',
-    seed: 'bun --env-file=../../.env prisma/seed.ts',
+    seed: 'bun run prisma/seed.ts',
   },
 });

@@ -1,6 +1,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/progress-client"
 }
 
 datasource db {
@@ -115,6 +116,7 @@ model ExpTransaction {
 
   @@index([userId])
   @@index([sourceType, sourceId])
+  @@index([createdAt, userId])
   @@map("exp_transaction")
 }
 

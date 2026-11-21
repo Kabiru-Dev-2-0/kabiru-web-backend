@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { LeaderboardController } from './leaderboard/leaderboard.controller';
 import { LeaderboardService } from './leaderboard/leaderboard.service';
-import { PrismaService } from './prisma/prisma.service';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   controllers: [
@@ -10,9 +10,8 @@ import { PrismaService } from './prisma/prisma.service';
     LeaderboardController,
   ],
 
-  providers: [
-    PrismaService,
-    LeaderboardService,
-  ],
+  imports: [PrismaModule],
+
+  providers: [LeaderboardService],
 })
 export class AppModule {}

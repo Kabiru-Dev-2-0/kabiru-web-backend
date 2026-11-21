@@ -960,29 +960,30 @@ export class AppController {
 
     const requestId = getRequestId(headers);
 
-    const [result, profiles] = await Promise.all([
-      sendTo<LeaderboardResultDto>(
-        this.progressClient,
-        PROGRESS_PATTERNS.LEADERBOARD_GET,
-        query,
-        this.buildMeta(headers, actor),
-        RPC_TIMEOUTS.progressRead,
-      ),
+    const result = await sendTo<LeaderboardResultDto>(
+      this.progressClient,
+      PROGRESS_PATTERNS.LEADERBOARD_GET,
+      query,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.progressRead,
+    );
 
-      sendTo<
-        Array<{
-          userId: string;
-          fullName: string;
-          avatarUrl?: string | null;
-        }>
-      >(
-        this.userClient,
-        USER_PATTERNS.PROFILE_LIST,
-        {},
-        this.buildMeta(headers, actor),
-        RPC_TIMEOUTS.user,
-      ).catch(() => []),
-    ]);
+    const userIds = result.items.map((item) => item.userId);
+    const profiles = userIds.length === 0
+      ? []
+      : await sendTo<
+          Array<{
+            userId: string;
+            fullName: string;
+            avatarUrl?: string | null;
+          }>
+        >(
+          this.userClient,
+          USER_PATTERNS.PROFILE_LIST,
+          { userIds },
+          this.buildMeta(headers, actor),
+          RPC_TIMEOUTS.user,
+        ).catch(() => []);
 
     const profileMap = new Map(
       (profiles ?? []).map((profile) => [
@@ -1004,13 +1005,9 @@ export class AppController {
         };
       });
 
-    return {
-      data: enrichedItems,
-
-      meta: {
-        requestId,
-        pagination: result.pagination,
-      },
-    };
+    return formatSuccessResponse(requestId, {
+      items: enrichedItems,
+      pagination: result.pagination,
+    });
   }
 }

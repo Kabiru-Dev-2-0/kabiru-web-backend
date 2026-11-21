@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '.prisma/progress-client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -68,6 +68,7 @@ export class LeaderboardService {
           AND created_at < ${endAt}
 
         GROUP BY user_id
+        HAVING SUM(amount) > 0
       ),
 
       totals AS (

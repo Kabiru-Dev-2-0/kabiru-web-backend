@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '.prisma/progress-client';
 
 const prisma = new PrismaClient();
 const dateOnly = (value: string): Date => new Date(`${value}T00:00:00.000Z`);
@@ -39,6 +39,24 @@ const ids = {
 };
 
 async function seed(): Promise<void> {
+  const now = new Date();
+  const weekStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  weekStart.setUTCDate(
+    weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7),
+  );
+  const isoDate = (dayOffset: number): string =>
+    new Date(
+      weekStart.getTime() + dayOffset * 24 * 60 * 60 * 1000,
+    ).toISOString();
+  const relativeDateOnly = (dayOffset: number): Date =>
+    dateOnly(isoDate(dayOffset).slice(0, 10));
+  const relativeTimestamp = (dayOffset: number, hour: number): Date =>
+    timestamp(
+      `${isoDate(dayOffset).slice(0, 10)}T${String(hour).padStart(2, '0')}:00:00Z`,
+    );
+
   const rankTiers = [
     { id: '10000000-0000-4000-8000-000000000001', name: 'Bronze', minAveragePoint: new Prisma.Decimal(0), maxAveragePoint: new Prisma.Decimal('59.99') },
     { id: '10000000-0000-4000-8000-000000000002', name: 'Silver', minAveragePoint: new Prisma.Decimal(60), maxAveragePoint: new Prisma.Decimal('74.99') },
@@ -69,10 +87,10 @@ async function seed(): Promise<void> {
     await prisma.masteryRule.upsert({ where: { id: item.id }, update: item, create: item });
   }
 
-  const updatedAt = timestamp('2026-11-21T04:00:00Z');
+  const updatedAt = timestamp(`${isoDate(4).slice(0, 10)}T04:00:00Z`);
   const userStats = [
-    { userId: ids.users.user1, totalExp: BigInt(1250), currentStreak: 7, longestStreak: 12, lastActivityDate: dateOnly('2026-11-21'), streakFreezeCount: 2, dailyTarget: 50, updatedAt },
-    { userId: ids.users.user2, totalExp: BigInt(650), currentStreak: 3, longestStreak: 5, lastActivityDate: dateOnly('2026-11-21'), streakFreezeCount: 1, dailyTarget: 40, updatedAt },
+    { userId: ids.users.user1, totalExp: BigInt(1250), currentStreak: 7, longestStreak: 12, lastActivityDate: relativeDateOnly(4), streakFreezeCount: 2, dailyTarget: 50, updatedAt },
+    { userId: ids.users.user2, totalExp: BigInt(650), currentStreak: 3, longestStreak: 5, lastActivityDate: relativeDateOnly(4), streakFreezeCount: 1, dailyTarget: 40, updatedAt },
   ];
   for (const item of userStats) {
     await prisma.userStat.upsert({ where: { userId: item.userId }, update: item, create: item });
@@ -91,8 +109,8 @@ async function seed(): Promise<void> {
   }
 
   const dailyActivities = [
-    { userId: ids.users.user1, activityDate: dateOnly('2026-11-21'), expEarned: 80, testsDone: 4, loggedIn: true, freezeUsed: false },
-    { userId: ids.users.user2, activityDate: dateOnly('2026-11-21'), expEarned: 40, testsDone: 2, loggedIn: true, freezeUsed: false },
+    { userId: ids.users.user1, activityDate: relativeDateOnly(4), expEarned: 80, testsDone: 4, loggedIn: true, freezeUsed: false },
+    { userId: ids.users.user2, activityDate: relativeDateOnly(4), expEarned: 40, testsDone: 2, loggedIn: true, freezeUsed: false },
   ];
   for (const item of dailyActivities) {
     await prisma.dailyActivity.upsert({
@@ -103,8 +121,8 @@ async function seed(): Promise<void> {
   }
 
   const userBadges = [
-    { userId: ids.users.user1, badgeId: ids.badges.badge1, awardedAt: timestamp('2026-11-20T10:00:00Z') },
-    { userId: ids.users.user2, badgeId: ids.badges.badge1, awardedAt: timestamp('2026-11-21T08:00:00Z') },
+    { userId: ids.users.user1, badgeId: ids.badges.badge1, awardedAt: relativeTimestamp(3, 10) },
+    { userId: ids.users.user2, badgeId: ids.badges.badge1, awardedAt: relativeTimestamp(4, 8) },
   ];
   for (const item of userBadges) {
     await prisma.userBadge.upsert({
@@ -127,8 +145,8 @@ async function seed(): Promise<void> {
   }
 
   const challenges = [
-    { userId: ids.users.user1, challengeId: ids.challenges.challenge1, periodStart: dateOnly('2026-11-17'), currentValue: 8, bestValue: 8, updatedAt },
-    { userId: ids.users.user2, challengeId: ids.challenges.challenge1, periodStart: dateOnly('2026-11-17'), currentValue: 5, bestValue: 5, updatedAt },
+    { userId: ids.users.user1, challengeId: ids.challenges.challenge1, periodStart: relativeDateOnly(0), currentValue: 8, bestValue: 8, updatedAt },
+    { userId: ids.users.user2, challengeId: ids.challenges.challenge1, periodStart: relativeDateOnly(0), currentValue: 5, bestValue: 5, updatedAt },
   ];
   for (const item of challenges) {
     await prisma.progressChallenge.upsert({
@@ -139,16 +157,16 @@ async function seed(): Promise<void> {
   }
 
   const expTransactions = [
-    { id: '40000000-0000-4000-8000-000000000001', userId: ids.users.user1, amount: 50, sourceType: 'TEST_COMPLETION', sourceId: ids.tests.test1, createdAt: timestamp('2026-11-20T10:00:00Z') },
-    { id: '40000000-0000-4000-8000-000000000002', userId: ids.users.user1, amount: 30, sourceType: 'DAILY_CHALLENGE', sourceId: ids.challenges.challenge1, createdAt: timestamp('2026-11-21T09:00:00Z') },
-    { id: '40000000-0000-4000-8000-000000000003', userId: ids.users.user2, amount: 40, sourceType: 'TEST_COMPLETION', sourceId: ids.tests.test2, createdAt: timestamp('2026-11-21T08:00:00Z') },
+    { id: '40000000-0000-4000-8000-000000000001', userId: ids.users.user1, amount: 50, sourceType: 'TEST_COMPLETION', sourceId: ids.tests.test1, createdAt: relativeTimestamp(3, 10) },
+    { id: '40000000-0000-4000-8000-000000000002', userId: ids.users.user1, amount: 30, sourceType: 'DAILY_CHALLENGE', sourceId: ids.challenges.challenge1, createdAt: relativeTimestamp(4, 9) },
+    { id: '40000000-0000-4000-8000-000000000003', userId: ids.users.user2, amount: 40, sourceType: 'TEST_COMPLETION', sourceId: ids.tests.test2, createdAt: relativeTimestamp(4, 8) },
   ];
   for (const item of expTransactions) {
     await prisma.expTransaction.upsert({ where: { id: item.id }, update: item, create: item });
   }
 
   const progressTests = [
-    { userId: ids.users.user1, testId: ids.tests.test1, bestScore: new Prisma.Decimal('95.50'), bestMastery: 'EXPERT', attemptsCount: 3, wrongAttemptsCount: 1, currentHintLevel: 0, status: 'COMPLETED', expAwardedAt: timestamp('2026-11-20T10:00:00Z') },
+    { userId: ids.users.user1, testId: ids.tests.test1, bestScore: new Prisma.Decimal('95.50'), bestMastery: 'EXPERT', attemptsCount: 3, wrongAttemptsCount: 1, currentHintLevel: 0, status: 'COMPLETED', expAwardedAt: relativeTimestamp(3, 10) },
     { userId: ids.users.user2, testId: ids.tests.test2, bestScore: new Prisma.Decimal('72.00'), bestMastery: 'INTERMEDIATE', attemptsCount: 2, wrongAttemptsCount: 2, currentHintLevel: 1, status: 'IN_PROGRESS', expAwardedAt: null },
   ];
   for (const item of progressTests) {
@@ -160,8 +178,8 @@ async function seed(): Promise<void> {
   }
 
   const submissions = [
-    { id: ids.submissions.submission1, userId: ids.users.user1, testId: ids.tests.test1, isCorrect: true, hintsUsed: 0, mastery: 'EXPERT', durationSeconds: 120, answer: { language: 'python', code: 'print(3.14 * 5 ** 2)', expectedOutput: '78.5' }, createdAt: timestamp('2026-11-20T10:00:00Z') },
-    { id: ids.submissions.submission2, userId: ids.users.user2, testId: ids.tests.test2, isCorrect: false, hintsUsed: 1, mastery: 'INTERMEDIATE', durationSeconds: 240, answer: { language: 'python', code: 'print(3.14 * 5)', expectedOutput: '78.5' }, createdAt: timestamp('2026-11-21T08:00:00Z') },
+    { id: ids.submissions.submission1, userId: ids.users.user1, testId: ids.tests.test1, isCorrect: true, hintsUsed: 0, mastery: 'EXPERT', durationSeconds: 120, answer: { language: 'python', code: 'print(3.14 * 5 ** 2)', expectedOutput: '78.5' }, createdAt: relativeTimestamp(3, 10) },
+    { id: ids.submissions.submission2, userId: ids.users.user2, testId: ids.tests.test2, isCorrect: false, hintsUsed: 1, mastery: 'INTERMEDIATE', durationSeconds: 240, answer: { language: 'python', code: 'print(3.14 * 5)', expectedOutput: '78.5' }, createdAt: relativeTimestamp(4, 8) },
   ];
   for (const item of submissions) {
     await prisma.submission.upsert({ where: { id: item.id }, update: item, create: item });

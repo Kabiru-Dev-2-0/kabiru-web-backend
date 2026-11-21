@@ -4,7 +4,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '.prisma/progress-client';
 
 @Injectable()
 export class PrismaService

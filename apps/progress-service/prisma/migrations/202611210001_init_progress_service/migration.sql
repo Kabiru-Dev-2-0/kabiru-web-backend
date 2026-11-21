@@ -179,6 +179,9 @@ CREATE INDEX "exp_transaction_user_id_idx" ON "exp_transaction"("user_id");
 CREATE INDEX "exp_transaction_source_type_source_id_idx" ON "exp_transaction"("source_type", "source_id");
 
 -- CreateIndex
+CREATE INDEX "exp_transaction_created_at_user_id_idx" ON "exp_transaction"("created_at", "user_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "level_name_key" ON "level"("name");
 
 -- CreateIndex
