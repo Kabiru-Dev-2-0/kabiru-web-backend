@@ -1,15 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
-import { ContentStatus, VisibilityType, type Prisma } from '@prisma/client';
+import {
+  BloomLevel,
+  ContentStatus,
+  DifficultyType,
+  HintType,
+  VersionStatus,
+  VisibilityType,
+  type Prisma,
+} from '@prisma/client';
 import {
   EDUCATION_LEVEL_CODES,
   createServiceError,
   type ActorContext,
+  type BadgeCatalogItemDto,
+  type BloomLevelDto,
+  type ChallengeCatalogItemDto,
   type CreateMaterialDto,
   type CreateSubjectDto,
+  type CreateTestDto,
   type CreateTopicDto,
+  type DifficultyTypeDto,
   type EducationLevelItemDto,
   type GetMaterialDetailParamsDto,
+  type GetTestHintParamsDto,
+  type HintTypeDto,
+  type ListChallengesQueryDto,
   type ListMaterialsQueryDto,
   type ListSubjectsQueryDto,
   type ListTopicsQueryDto,
@@ -19,12 +35,21 @@ import {
   type MaterialListItemDto,
   type MutationResultDto,
   type PaginationMeta,
+  type PracticeCaseStudyItemDto,
+  type QuestionTypeDto,
+  type QuizGameModuleSummaryDto,
+  type QuizItemDto,
   type SubjectIdParamDto,
   type SubjectItemDto,
+  type TestForEvaluationInternalDto,
+  type TestHintContextInternalDto,
+  type TestHintDetailDto,
+  type TestIdParamDto,
   type TopicIdParamDto,
   type TopicItemDto,
   type UpdateMaterialPayloadDto,
   type UpdateSubjectPayloadDto,
+  type UpdateTestPayloadDto,
   type UpdateTopicPayloadDto,
 } from '@kabiru/contracts';
 import {
@@ -773,5 +798,576 @@ export class CurriculumService {
         })),
       })),
     };
+  }
+
+  // ==========================================
+  // 6. SMA - PRACTICE STUDI KASUS & HINT BERTINGKAT
+  // ==========================================
+
+  async listPracticesByMaterial(
+    params: MaterialIdParamDto,
+    actor: ActorContext | null,
+  ): Promise<PracticeCaseStudyItemDto[]> {
+    const isAuthor = canAccessUnpublishedContent(actor);
+
+    const rows = await this.prisma.test.findMany({
+      where: {
+        materialId: params.materialId,
+        deletedAt: null,
+        ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+        OR: [
+          { questionType: { in: ['case_study', 'code_debugger'] } },
+          { testCases: { some: {} } },
+          { hints: { some: {} } },
+        ],
+      },
+      orderBy: [{ number: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        testCases: {
+          where: { isHidden: false },
+          orderBy: { id: 'asc' },
+        },
+        hints: {
+          orderBy: { level: 'asc' },
+          select: { id: true, level: true, type: true },
+        },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      materialId: row.materialId,
+      number: row.number,
+      title: row.title,
+      questionType: row.questionType as QuestionTypeDto,
+      prompt: row.prompt,
+      points: row.points,
+      difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
+      bloomLevel: row.bloomLevel.toLowerCase() as BloomLevelDto,
+      maxAttempts: row.maxAttempts,
+      payload: (row.payload as Record<string, unknown> | null) ?? null,
+      sampleTestCases: row.testCases.map((tc) => ({
+        id: tc.id,
+        input: tc.input,
+        expectedOutput: tc.expectedOutput,
+      })),
+      availableHints: row.hints.map((h) => ({
+        id: h.id,
+        level: h.level,
+        type: h.type.toLowerCase() as HintTypeDto,
+      })),
+    }));
+  }
+
+  async getTestHintByLevel(
+    params: GetTestHintParamsDto,
+    actor: ActorContext | null,
+  ): Promise<TestHintDetailDto> {
+    const isAuthor = canAccessUnpublishedContent(actor);
+
+    const hint = await this.prisma.hint.findFirst({
+      where: {
+        testId: params.testId,
+        level: params.level,
+        test: {
+          deletedAt: null,
+          ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+        },
+      },
+    });
+
+    if (!hint) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: `Hint level ${params.level} untuk soal ini tidak ditemukan`,
+        }),
+      );
+    }
+
+    return {
+      id: hint.id,
+      testId: hint.testId,
+      level: hint.level,
+      type: hint.type.toLowerCase() as HintTypeDto,
+      content: hint.content,
+    };
+  }
+
+  // ==========================================
+  // 7. SMA - QUIZ (BERELASI DENGAN GAME MODULE)
+  // ==========================================
+
+  async listQuizzesByMaterial(
+    params: MaterialIdParamDto,
+    actor: ActorContext | null,
+  ): Promise<QuizItemDto[]> {
+    const isAuthor = canAccessUnpublishedContent(actor);
+
+    const rows = await this.prisma.test.findMany({
+      where: {
+        materialId: params.materialId,
+        deletedAt: null,
+        ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+      },
+      orderBy: [{ number: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        gameModuleVersion: {
+          include: {
+            gameModule: true,
+          },
+        },
+      },
+    });
+
+    return rows.map((row) => {
+      const gmv = row.gameModuleVersion;
+      const manifestObj =
+        gmv?.manifest && typeof gmv.manifest === 'object'
+          ? (gmv.manifest as Record<string, unknown>)
+          : {};
+      const maxScore = typeof manifestObj.max_score === 'number' ? manifestObj.max_score : row.points;
+
+      return {
+        id: row.id,
+        materialId: row.materialId,
+        number: row.number,
+        title: row.title,
+        questionType: row.questionType as QuestionTypeDto,
+        prompt: row.prompt,
+        points: row.points,
+        difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
+        bloomLevel: row.bloomLevel.toLowerCase() as BloomLevelDto,
+        maxAttempts: row.maxAttempts,
+        gameModuleVersionId: row.gameModuleVersionId,
+        gameModule: gmv
+          ? {
+              versionId: gmv.id,
+              gameModuleId: gmv.gameModuleId,
+              moduleSlug: gmv.gameModule.slug,
+              moduleName: gmv.gameModule.name,
+              source: gmv.gameModule.source.toLowerCase() as 'template' | 'custom',
+              templateId: gmv.gameModule.templateId,
+              version: gmv.version,
+              maxScore,
+              config:
+                gmv.config && typeof gmv.config === 'object'
+                  ? (gmv.config as Record<string, unknown>)
+                  : {},
+            }
+          : null,
+        payload: (row.payload as Record<string, unknown> | null) ?? null,
+      };
+    });
+  }
+
+  async getTestDetail(
+    params: TestIdParamDto,
+    actor: ActorContext | null,
+  ): Promise<
+    PracticeCaseStudyItemDto & {
+      gameModuleVersionId: string | null;
+      gameModule: QuizGameModuleSummaryDto | null;
+    }
+  > {
+    const isAuthor = canAccessUnpublishedContent(actor);
+
+    const row = await this.prisma.test.findFirst({
+      where: {
+        id: params.testId,
+        deletedAt: null,
+        ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
+      },
+      include: {
+        testCases: {
+          where: { isHidden: false },
+          orderBy: { id: 'asc' },
+        },
+        hints: {
+          orderBy: { level: 'asc' },
+          select: { id: true, level: true, type: true },
+        },
+        gameModuleVersion: {
+          include: { gameModule: true },
+        },
+      },
+    });
+
+    if (!row) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Soal atau Quiz tidak ditemukan',
+        }),
+      );
+    }
+
+    const gmv = row.gameModuleVersion;
+    const manifestObj =
+      gmv?.manifest && typeof gmv.manifest === 'object'
+        ? (gmv.manifest as Record<string, unknown>)
+        : {};
+    const maxScore = typeof manifestObj.max_score === 'number' ? manifestObj.max_score : row.points;
+
+    return {
+      id: row.id,
+      materialId: row.materialId,
+      number: row.number,
+      title: row.title,
+      questionType: row.questionType as QuestionTypeDto,
+      prompt: row.prompt,
+      points: row.points,
+      difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
+      bloomLevel: row.bloomLevel.toLowerCase() as BloomLevelDto,
+      maxAttempts: row.maxAttempts,
+      gameModuleVersionId: row.gameModuleVersionId,
+      gameModule: gmv
+        ? {
+            versionId: gmv.id,
+            gameModuleId: gmv.gameModuleId,
+            moduleSlug: gmv.gameModule.slug,
+            moduleName: gmv.gameModule.name,
+            source: gmv.gameModule.source.toLowerCase() as 'template' | 'custom',
+            templateId: gmv.gameModule.templateId,
+            version: gmv.version,
+            maxScore,
+            config:
+              gmv.config && typeof gmv.config === 'object'
+                ? (gmv.config as Record<string, unknown>)
+                : {},
+          }
+        : null,
+      payload: (row.payload as Record<string, unknown> | null) ?? null,
+      sampleTestCases: row.testCases.map((tc) => ({
+        id: tc.id,
+        input: tc.input,
+        expectedOutput: tc.expectedOutput,
+      })),
+      availableHints: row.hints.map((h) => ({
+        id: h.id,
+        level: h.level,
+        type: h.type.toLowerCase() as HintTypeDto,
+      })),
+    };
+  }
+
+  // ==========================================
+  // AUTHORING: TEST / PRACTICE / QUIZ CRUD (GURU & ADMIN)
+  // ==========================================
+
+  async createTest(dto: CreateTestDto, actor: ActorContext | null) {
+    const authActor = assertAuthorRole(actor);
+
+    const material = await this.prisma.material.findFirst({
+      where: { id: dto.materialId, deletedAt: null },
+    });
+    if (!material) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Materi untuk soal ini tidak ditemukan',
+        }),
+      );
+    }
+
+    // FR-15: Jika menautkan ke GameModuleVersion, wajib versi yang sudah PUBLISHED
+    if (dto.gameModuleVersionId) {
+      const gmv = await this.prisma.gameModuleVersion.findUnique({
+        where: { id: dto.gameModuleVersionId },
+      });
+      if (!gmv || gmv.status !== VersionStatus.PUBLISHED) {
+        throw new RpcException(
+          createServiceError({
+            code: 'VALIDATION_ERROR',
+            httpStatus: 400,
+            message: 'Quiz hanya dapat ditautkan ke versi Game Module yang sudah berstatus PUBLISHED',
+          }),
+        );
+      }
+    }
+
+    const created = await this.prisma.test.create({
+      data: {
+        materialId: dto.materialId,
+        gameModuleVersionId: dto.gameModuleVersionId ?? null,
+        createdBy: authActor.userId,
+        number: dto.number,
+        title: dto.title,
+        questionType: dto.questionType,
+        prompt: dto.prompt,
+        points: dto.points,
+        difficulty: dto.difficulty.toUpperCase() as DifficultyType,
+        bloomLevel: dto.bloomLevel.toUpperCase() as BloomLevel,
+        maxAttempts: dto.maxAttempts ?? null,
+        payload: (dto.payload ?? undefined) as Prisma.InputJsonValue | undefined,
+        answerKey: (dto.answerKey ?? undefined) as Prisma.InputJsonValue | undefined,
+        status: toContentStatusPrisma(dto.status),
+        ...(dto.hints?.length
+          ? {
+              hints: {
+                create: dto.hints.map((h) => ({
+                  level: h.level,
+                  type: h.type.toUpperCase() as HintType,
+                  content: h.content,
+                })),
+              },
+            }
+          : {}),
+        ...(dto.testCases?.length
+          ? {
+              testCases: {
+                create: dto.testCases.map((tc) => ({
+                  input: tc.input,
+                  expectedOutput: tc.expectedOutput,
+                  weight: tc.weight,
+                  isHidden: tc.isHidden,
+                })),
+              },
+            }
+          : {}),
+      },
+    });
+
+    return this.getTestDetail({ testId: created.id }, actor);
+  }
+
+  async updateTest(dto: UpdateTestPayloadDto, actor: ActorContext | null) {
+    assertAuthorRole(actor);
+
+    const existing = await this.prisma.test.findFirst({
+      where: { id: dto.testId, deletedAt: null },
+    });
+    if (!existing) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Soal atau Quiz tidak ditemukan',
+        }),
+      );
+    }
+
+    if (dto.gameModuleVersionId) {
+      const gmv = await this.prisma.gameModuleVersion.findUnique({
+        where: { id: dto.gameModuleVersionId },
+      });
+      if (!gmv || gmv.status !== VersionStatus.PUBLISHED) {
+        throw new RpcException(
+          createServiceError({
+            code: 'VALIDATION_ERROR',
+            httpStatus: 400,
+            message: 'Quiz hanya dapat ditautkan ke versi Game Module yang sudah berstatus PUBLISHED',
+          }),
+        );
+      }
+    }
+
+    await this.prisma.test.update({
+      where: { id: dto.testId },
+      data: {
+        ...(dto.gameModuleVersionId !== undefined ? { gameModuleVersionId: dto.gameModuleVersionId } : {}),
+        ...(dto.number !== undefined ? { number: dto.number } : {}),
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.questionType !== undefined ? { questionType: dto.questionType } : {}),
+        ...(dto.prompt !== undefined ? { prompt: dto.prompt } : {}),
+        ...(dto.points !== undefined ? { points: dto.points } : {}),
+        ...(dto.difficulty !== undefined ? { difficulty: dto.difficulty.toUpperCase() as DifficultyType } : {}),
+        ...(dto.bloomLevel !== undefined ? { bloomLevel: dto.bloomLevel.toUpperCase() as BloomLevel } : {}),
+        ...(dto.maxAttempts !== undefined ? { maxAttempts: dto.maxAttempts } : {}),
+        ...(dto.payload !== undefined ? { payload: (dto.payload ?? undefined) as Prisma.InputJsonValue | undefined } : {}),
+        ...(dto.answerKey !== undefined ? { answerKey: (dto.answerKey ?? undefined) as Prisma.InputJsonValue | undefined } : {}),
+        ...(dto.status !== undefined ? { status: toContentStatusPrisma(dto.status) } : {}),
+      },
+    });
+
+    return this.getTestDetail({ testId: dto.testId }, actor);
+  }
+
+  async deleteTest(params: TestIdParamDto, actor: ActorContext | null): Promise<MutationResultDto> {
+    assertAuthorRole(actor);
+
+    const existing = await this.prisma.test.findFirst({
+      where: { id: params.testId, deletedAt: null },
+    });
+    if (!existing) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Soal atau Quiz tidak ditemukan',
+        }),
+      );
+    }
+
+    await this.prisma.test.update({
+      where: { id: params.testId },
+      data: { deletedAt: new Date() },
+    });
+
+    return { success: true, id: params.testId, message: 'Soal/Quiz berhasil dihapus (soft-delete)' };
+  }
+
+  // ==========================================
+  // INTERNAL TCP HANDLERS (UNTUK AI-SERVICE & PROGRESS-SERVICE)
+  // ==========================================
+
+  async getTestHintContextInternal(
+    params: TestIdParamDto,
+  ): Promise<TestHintContextInternalDto & { payload: Record<string, unknown> | null }> {
+    const row = await this.prisma.test.findFirst({
+      where: { id: params.testId, deletedAt: null },
+      include: {
+        hints: { orderBy: { level: 'asc' } },
+        gameModuleVersion: true,
+      },
+    });
+
+    if (!row) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Soal tidak ditemukan untuk konteks AI Hint',
+        }),
+      );
+    }
+
+    const rawPayload =
+      (row.payload as Record<string, unknown> | null) ??
+      (row.gameModuleVersion?.config as Record<string, unknown> | null) ??
+      null;
+
+    return {
+      id: row.id,
+      materialId: row.materialId,
+      questionType: row.questionType,
+      prompt: row.prompt,
+      difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
+      bloomLevel: row.bloomLevel.toLowerCase() as BloomLevelDto,
+      payload: rawPayload,
+      staticHints: row.hints.map((h) => ({
+        level: h.level,
+        type: h.type.toLowerCase() as 'pseudocode' | 'cloze_code' | 'full_code',
+        content: h.content,
+      })),
+    };
+  }
+
+  async getTestForEvaluationInternal(params: TestIdParamDto): Promise<TestForEvaluationInternalDto> {
+    const row = await this.prisma.test.findFirst({
+      where: { id: params.testId, deletedAt: null },
+      include: {
+        rubric: true,
+        testCases: { orderBy: { id: 'asc' } },
+      },
+    });
+
+    if (!row) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Soal tidak ditemukan untuk evaluasi',
+        }),
+      );
+    }
+
+    return {
+      id: row.id,
+      materialId: row.materialId,
+      questionType: row.questionType,
+      points: row.points,
+      difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
+      maxAttempts: row.maxAttempts,
+      status: toContentStatusDto(row.status),
+      answerKey: (row.answerKey as Record<string, unknown> | null) ?? null,
+      rubric: row.rubric
+        ? {
+            id: row.rubric.id,
+            prompt: row.rubric.prompt,
+            maxScore: row.rubric.maxScore,
+          }
+        : null,
+      testCases: row.testCases.map((tc) => ({
+        id: tc.id,
+        input: tc.input,
+        expectedOutput: tc.expectedOutput,
+        weight: tc.weight,
+        isHidden: tc.isHidden,
+      })),
+    };
+  }
+
+  // ==========================================
+  // KATALOG GAMIFIKASI: CHALLENGE & BADGE
+  // ==========================================
+
+  async listChallenges(query: ListChallengesQueryDto): Promise<ChallengeCatalogItemDto[]> {
+    const rows = await this.prisma.challenge.findMany({
+      where: {
+        ...(query.onlyActive ? { isActive: true } : {}),
+        OR: [{ educationLevel: { code: query.level } }, { educationLevelId: null }],
+      },
+      include: {
+        educationLevel: { select: { code: true } },
+        tiers: {
+          orderBy: { threshold: 'asc' },
+          include: {
+            badge: { include: { iconAsset: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      type: row.type.toLowerCase() as ChallengeCatalogItemDto['type'],
+      educationLevelCode: row.educationLevel?.code ?? null,
+      title: row.title,
+      description: row.description,
+      period: row.period,
+      gameModuleVersionId: row.gameModuleVersionId,
+      maxScore: row.maxScore,
+      isActive: row.isActive,
+      tiers: row.tiers.map((t) => ({
+        id: t.id,
+        tier: t.tier.toLowerCase() as 'bronze' | 'silver' | 'gold',
+        threshold: t.threshold,
+        rewardExp: t.rewardExp,
+        badge: t.badge
+          ? {
+              id: t.badge.id,
+              code: t.badge.code,
+              name: t.badge.name,
+              description: t.badge.description,
+              criteria: (t.badge.criteria as Record<string, unknown> | null) ?? null,
+              targetValue: t.badge.targetValue,
+              iconAsset: toAssetSummaryDto(t.badge.iconAsset),
+            }
+          : null,
+      })),
+    }));
+  }
+
+  async listBadges(): Promise<BadgeCatalogItemDto[]> {
+    const rows = await this.prisma.badge.findMany({
+      include: { iconAsset: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return rows.map((b) => ({
+      id: b.id,
+      code: b.code,
+      name: b.name,
+      description: b.description,
+      criteria: (b.criteria as Record<string, unknown> | null) ?? null,
+      targetValue: b.targetValue,
+      iconAsset: toAssetSummaryDto(b.iconAsset),
+    }));
   }
 }
