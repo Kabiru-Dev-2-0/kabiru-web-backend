@@ -21,8 +21,11 @@ export const QuestionTypeSchema = z.enum([
   'sorting',
   'true_false',
   'multi_select',
+  'checkbox',
   'pattern_painter',
   'maze_runner',
+  'code_debugger',
+  'case_study',
 ]);
 
 // Query: GET /learning/subjects?level=SMA&search=...
@@ -169,3 +172,80 @@ export const AssetIdParamSchema = z.object({
 
 export type UploadAssetDto = z.infer<typeof UploadAssetSchema>;
 export type AssetIdParamDto = z.infer<typeof AssetIdParamSchema>;
+
+// ==========================================
+// 6. PRACTICE STUDI KASUS, 7. QUIZ, & GAMIFICATION SCHEMAS
+// ==========================================
+export const DifficultyTypeSchema = z.enum(['easy', 'medium', 'hard']);
+export const BloomLevelSchema = z.enum([
+  'remember',
+  'understand',
+  'apply',
+  'analyze',
+  'evaluate',
+  'create',
+]);
+export const HintTypeSchema = z.enum(['pseudocode', 'cloze_code', 'full_code']);
+
+export const TestIdParamSchema = z.object({
+  testId: UuidSchema,
+});
+
+export const GetTestHintParamsSchema = z.object({
+  testId: UuidSchema,
+  level: z.coerce.number().int().min(1).max(3),
+});
+
+export const HintItemInputSchema = z.object({
+  level: z.number().int().min(1).max(3),
+  type: HintTypeSchema,
+  content: z.string().trim().min(1).max(10_000),
+});
+
+export const TestCaseItemInputSchema = z.object({
+  input: z.string().max(5000),
+  expectedOutput: z.string().max(5000),
+  weight: z.number().int().min(1).max(100).default(1),
+  isHidden: z.boolean().default(false),
+});
+
+export const CreateTestSchema = z.object({
+  materialId: UuidSchema,
+  gameModuleVersionId: UuidSchema.nullable().optional(),
+  number: z.number().int().min(1),
+  title: z.string().trim().min(3).max(200),
+  questionType: QuestionTypeSchema,
+  prompt: z.string().trim().min(1).max(50_000),
+  points: z.number().int().min(1).max(1000).default(10),
+  difficulty: DifficultyTypeSchema.default('medium'),
+  bloomLevel: BloomLevelSchema.default('apply'),
+  maxAttempts: z.number().int().min(1).max(100).nullable().optional(),
+  payload: TestPublicPayloadSchema.nullable().optional(),
+  answerKey: TestAnswerKeySchema.nullable().optional(),
+  status: ContentStatusSchema.default('draft'),
+  hints: z.array(HintItemInputSchema).max(3).optional(),
+  testCases: z.array(TestCaseItemInputSchema).max(20).optional(),
+});
+
+export const UpdateTestSchema = CreateTestSchema.omit({ materialId: true }).partial();
+export const UpdateTestPayloadSchema = TestIdParamSchema.merge(UpdateTestSchema);
+
+export const ListChallengesQuerySchema = z.object({
+  level: z.enum(EDUCATION_LEVEL_CODES).default('SMA'),
+  onlyActive: z
+    .preprocess((value) => {
+      if (typeof value !== 'string') return value;
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') return true;
+      if (normalized === 'false' || normalized === '0') return false;
+      return value;
+    }, z.boolean())
+    .default(true),
+});
+
+export type TestIdParamDto = z.infer<typeof TestIdParamSchema>;
+export type GetTestHintParamsDto = z.infer<typeof GetTestHintParamsSchema>;
+export type CreateTestDto = z.infer<typeof CreateTestSchema>;
+export type UpdateTestPayloadDto = z.infer<typeof UpdateTestPayloadSchema>;
+export type ListChallengesQueryDto = z.infer<typeof ListChallengesQuerySchema>;
+

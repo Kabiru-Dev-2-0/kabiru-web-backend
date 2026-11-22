@@ -3,21 +3,23 @@ import { MessagePattern, Payload } from '@nestjs/microservices';
 import {
   CreateMaterialSchema,
   CreateSubjectSchema,
+  CreateTestSchema,
   CreateTopicSchema,
   GetMaterialDetailParamsSchema,
+  GetTestHintParamsSchema,
   LEARNING_PATTERNS,
+  ListChallengesQuerySchema,
   ListMaterialsQuerySchema,
   ListSubjectsQuerySchema,
   ListTopicsQuerySchema,
   MaterialIdParamSchema,
   SubjectIdParamSchema,
+  TestIdParamSchema,
   TopicIdParamSchema,
   UpdateMaterialPayloadSchema,
   UpdateSubjectPayloadSchema,
+  UpdateTestPayloadSchema,
   UpdateTopicPayloadSchema,
-  type CreateMaterialDto,
-  type CreateSubjectDto,
-  type CreateTopicDto,
   type EducationLevelItemDto,
   type MaterialAuthoringDetailDto,
   type MaterialDetailDto,
@@ -25,9 +27,6 @@ import {
   type MutationResultDto,
   type SubjectItemDto,
   type TopicItemDto,
-  type UpdateMaterialPayloadDto,
-  type UpdateSubjectPayloadDto,
-  type UpdateTopicPayloadDto,
 } from '@kabiru/contracts';
 import { extractActor, validateRpcData } from '../common/rpc-validation.util';
 import { CurriculumService, type PaginatedResult } from './curriculum.service';
@@ -142,5 +141,83 @@ export class CurriculumController {
     const data = validateRpcData(MaterialIdParamSchema, payload);
     const actor = extractActor(payload);
     return this.curriculumService.getMaterialAuthoringDetail(data, actor);
+  }
+
+  // ==========================================
+  // 6. PRACTICE STUDI KASUS & 7. QUIZ HANDLERS
+  // ==========================================
+  @MessagePattern(LEARNING_PATTERNS.PRACTICE_LIST_BY_MATERIAL)
+  listPracticesByMaterial(@Payload() payload: unknown) {
+    const params = validateRpcData(MaterialIdParamSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.listPracticesByMaterial(params, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.QUIZ_LIST_BY_MATERIAL)
+  listQuizzesByMaterial(@Payload() payload: unknown) {
+    const params = validateRpcData(MaterialIdParamSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.listQuizzesByMaterial(params, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.TEST_GET_DETAIL)
+  getTestDetail(@Payload() payload: unknown) {
+    const params = validateRpcData(TestIdParamSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.getTestDetail(params, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.TEST_GET_HINT_BY_LEVEL)
+  getTestHintByLevel(@Payload() payload: unknown) {
+    const params = validateRpcData(GetTestHintParamsSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.getTestHintByLevel(params, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.TEST_CREATE)
+  createTest(@Payload() payload: unknown) {
+    const data = validateRpcData(CreateTestSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.createTest(data, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.TEST_UPDATE)
+  updateTest(@Payload() payload: unknown) {
+    const data = validateRpcData(UpdateTestPayloadSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.updateTest(data, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.TEST_DELETE)
+  deleteTest(@Payload() payload: unknown) {
+    const params = validateRpcData(TestIdParamSchema, payload);
+    const actor = extractActor(payload);
+    return this.curriculumService.deleteTest(params, actor);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.CHALLENGE_LIST)
+  listChallenges(@Payload() payload: unknown) {
+    const query = validateRpcData(ListChallengesQuerySchema, payload);
+    return this.curriculumService.listChallenges(query);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.BADGE_LIST)
+  listBadges() {
+    return this.curriculumService.listBadges();
+  }
+
+  // ==========================================
+  // INTERNAL SERVICE-TO-SERVICE HANDLERS
+  // ==========================================
+  @MessagePattern(LEARNING_PATTERNS.INTERNAL_TEST_GET_HINT_CTX)
+  getTestHintContextInternal(@Payload() payload: unknown) {
+    const params = validateRpcData(TestIdParamSchema, payload);
+    return this.curriculumService.getTestHintContextInternal(params);
+  }
+
+  @MessagePattern(LEARNING_PATTERNS.INTERNAL_TEST_GET_FOR_EVAL)
+  getTestForEvaluationInternal(@Payload() payload: unknown) {
+    const params = validateRpcData(TestIdParamSchema, payload);
+    return this.curriculumService.getTestForEvaluationInternal(params);
   }
 }

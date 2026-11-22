@@ -28,6 +28,21 @@ export const LEARNING_PATTERNS = {
   INTERNAL_TEST_GET_FOR_EVAL: 'learning.internal.test.getForEvaluation',
   INTERNAL_TEST_GET_HINT_CTX: 'learning.internal.test.getHintContext',
   INTERNAL_EDU_LEVEL_VERIFY: 'learning.internal.educationLevel.verify',
+
+  // 6. SMA - Practice Studi Kasus & 7. SMA - Quiz (Student & Teacher Read)
+  PRACTICE_LIST_BY_MATERIAL: 'learning.practice.listByMaterial',
+  QUIZ_LIST_BY_MATERIAL: 'learning.quiz.listByMaterial',
+  TEST_GET_DETAIL: 'learning.test.getDetail',
+  TEST_GET_HINT_BY_LEVEL: 'learning.test.getHintByLevel',
+
+  // Authoring CRUD Soal / Practice / Quiz (Teacher, Admin, Developer)
+  TEST_CREATE: 'learning.test.create',
+  TEST_UPDATE: 'learning.test.update',
+  TEST_DELETE: 'learning.test.delete',
+
+  // Katalog Gamifikasi (Challenge & Badge SMA)
+  CHALLENGE_LIST: 'learning.challenge.list',
+  BADGE_LIST: 'learning.badge.list',
 } as const;
 
 export type LearningPattern = (typeof LEARNING_PATTERNS)[keyof typeof LEARNING_PATTERNS];
