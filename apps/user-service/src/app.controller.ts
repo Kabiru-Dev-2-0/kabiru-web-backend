@@ -226,8 +226,14 @@ export class AppController {
     const payload = unwrapPayload<ListUsersQueryDto>(rawPayload);
     const filterRole = payload.role;
     const filterSearch = payload.search?.trim().toLowerCase();
+    const filterUserIds = payload.userIds;
 
     let list = Array.from(USERS.values());
+
+    if (filterUserIds?.length) {
+      const userIdSet = new Set(filterUserIds);
+      list = list.filter((p) => userIdSet.has(p.userId));
+    }
 
     if (filterRole && USER_ROLES.includes(filterRole)) {
       list = list.filter((p) => p.role === filterRole);

@@ -26,11 +26,14 @@ import {
   LEARNING_PATTERNS,
   USER_PATTERNS,
   USER_ROLES,
+  PROGRESS_PATTERNS,
   type ActorContext,
   type ApiSuccessResponse,
   type InternalRequest,
   type PaginationMeta,
   type UserRole,
+  type LeaderboardEntryDto,
+  type LeaderboardResultDto,
 } from '@kabiru/contracts';
 
 type GatewayHeaders = Record<string, string | undefined>;
@@ -43,6 +46,7 @@ const AI_PATTERNS = {
   OLLAMA_STATUS: 'ai.ollama.status',
   GENERATE: 'ai.generate',
   SUBMIT: 'ai.submit',
+  HINT_GENERATE: 'ai.hint.generate',
 } as const;
 
 const RPC_TIMEOUTS = {
@@ -707,6 +711,43 @@ export class AppController {
     return this.learningRead(headers, LEARNING_PATTERNS.MATERIAL_GET_DETAIL, { materialId });
   }
 
+  // 6. SMA - Practice Studi Kasus per Materi
+  @Get('learning/materials/:materialId/practices')
+  materialPractices(@Param('materialId') materialId: string, @Headers() headers: GatewayHeaders) {
+    return this.learningRead(headers, LEARNING_PATTERNS.PRACTICE_LIST_BY_MATERIAL, { materialId });
+  }
+
+  // 7. SMA - Quiz per Materi (Berelasi dengan GameModuleVersion)
+  @Get('learning/materials/:materialId/quizzes')
+  materialQuizzes(@Param('materialId') materialId: string, @Headers() headers: GatewayHeaders) {
+    return this.learningRead(headers, LEARNING_PATTERNS.QUIZ_LIST_BY_MATERIAL, { materialId });
+  }
+
+  // Buka Hint Bertingkat (Level 1: pseudocode, Level 2: cloze_code, Level 3: full_code)
+  @Get('learning/tests/:testId/hints/:level')
+  testHintByLevel(
+    @Param('testId') testId: string,
+    @Param('level') level: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.learningRead(headers, LEARNING_PATTERNS.TEST_GET_HINT_BY_LEVEL, { testId, level });
+  }
+
+  @Get('learning/tests/:testId')
+  testDetail(@Param('testId') testId: string, @Headers() headers: GatewayHeaders) {
+    return this.learningRead(headers, LEARNING_PATTERNS.TEST_GET_DETAIL, { testId });
+  }
+
+  @Get('learning/challenges')
+  challenges(@Query() query: QueryParams, @Headers() headers: GatewayHeaders) {
+    return this.learningRead(headers, LEARNING_PATTERNS.CHALLENGE_LIST, query);
+  }
+
+  @Get('learning/badges')
+  badges(@Headers() headers: GatewayHeaders) {
+    return this.learningRead(headers, LEARNING_PATTERNS.BADGE_LIST, {});
+  }
+
   // ==========================================
   // LEARNING: AUTHORING CRUD (Guru, Admin, Developer)
   // ==========================================
@@ -762,6 +803,25 @@ export class AppController {
   @Delete('learning/materials/:materialId')
   deleteMaterial(@Param('materialId') materialId: string, @Headers() headers: GatewayHeaders) {
     return this.learningWrite(headers, LEARNING_PATTERNS.MATERIAL_DELETE, { materialId });
+  }
+
+  @Post('learning/tests')
+  createTest(@Body() body: JsonBody, @Headers() headers: GatewayHeaders) {
+    return this.learningWrite(headers, LEARNING_PATTERNS.TEST_CREATE, body);
+  }
+
+  @Patch('learning/tests/:testId')
+  updateTest(
+    @Param('testId') testId: string,
+    @Body() body: JsonBody,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.learningWrite(headers, LEARNING_PATTERNS.TEST_UPDATE, { ...body, testId });
+  }
+
+  @Delete('learning/tests/:testId')
+  deleteTest(@Param('testId') testId: string, @Headers() headers: GatewayHeaders) {
+    return this.learningWrite(headers, LEARNING_PATTERNS.TEST_DELETE, { testId });
   }
 
   // ==========================================
@@ -915,6 +975,56 @@ export class AppController {
     });
   }
 
+  /**
+   * POST /v1/ai/hints (Integrasi Quiz -> Learning Service -> AI Hint Service)
+   * Otomatis mengambil konteks soal (questionType, prompt, payload/gameConfig) dari learning-service
+   * jika Frontend hanya mengirimkan testId, lalu meneruskannya ke ai-service ('ai.hint.generate').
+   */
+  @Post('ai/hints')
+  async aiGenerateHint(@Body() body: JsonBody, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await this.resolveActor(headers, false);
+
+    let enrichedPayload: Record<string, unknown> = {
+      ...body,
+      userId: body.userId ?? actor?.userId,
+    };
+
+    if (typeof body.testId === 'string' && (!body.prompt || !body.questionType)) {
+      try {
+        const ctx = await sendTo<{
+          questionType: string;
+          prompt: string;
+          payload: Record<string, unknown> | null;
+        }>(
+          this.learningClient,
+          LEARNING_PATTERNS.INTERNAL_TEST_GET_HINT_CTX,
+          { testId: body.testId },
+          this.buildMeta(headers, actor),
+          RPC_TIMEOUTS.learningRead,
+        );
+        enrichedPayload = {
+          ...enrichedPayload,
+          questionType: body.questionType ?? ctx.questionType,
+          prompt: body.prompt ?? ctx.prompt,
+          payload: body.payload ?? ctx.payload ?? {},
+        };
+      } catch {
+        // Jika testId tidak ditemukan di DB, tetap teruskan body apa adanya ke ai-service
+      }
+    }
+
+    const result = await sendTo<unknown>(
+      this.aiClient,
+      AI_PATTERNS.HINT_GENERATE,
+      enrichedPayload,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.aiHint,
+    );
+
+    return formatSuccessResponse(requestId, result);
+  }
+
   // ==========================================
   // PROGRESS SERVICE
   // ==========================================
@@ -937,5 +1047,74 @@ export class AppController {
       },
       HttpStatus.NOT_IMPLEMENTED,
     );
+  }
+
+    /**
+   * GET /v1/progress/leaderboard
+   *
+   * Mengambil leaderboard mingguan dari progress-service.
+   * Profil pengguna dilengkapi melalui user-service.
+   */
+  @Get('progress/leaderboard')
+  async getLeaderboard(
+    @Query() query: QueryParams,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    const actor = await this.resolveActor(
+      headers,
+      false,
+    );
+
+    const requestId = getRequestId(headers);
+
+    const result = await sendTo<LeaderboardResultDto>(
+      this.progressClient,
+      PROGRESS_PATTERNS.LEADERBOARD_GET,
+      query,
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.progressRead,
+    );
+
+    const userIds = result.items.map((item) => item.userId);
+    const profiles = userIds.length === 0
+      ? []
+      : await sendTo<
+          Array<{
+            userId: string;
+            fullName: string;
+            avatarUrl?: string | null;
+          }>
+        >(
+          this.userClient,
+          USER_PATTERNS.PROFILE_LIST,
+          { userIds },
+          this.buildMeta(headers, actor),
+          RPC_TIMEOUTS.user,
+        ).catch(() => []);
+
+    const profileMap = new Map(
+      (profiles ?? []).map((profile) => [
+        profile.userId,
+        profile,
+      ]),
+    );
+
+    const enrichedItems: LeaderboardEntryDto[] =
+      result.items.map((item) => {
+        const profile = profileMap.get(item.userId);
+
+        return {
+          ...item,
+
+          fullName: profile?.fullName ?? null,
+
+          avatarUrl: profile?.avatarUrl ?? null,
+        };
+      });
+
+    return formatSuccessResponse(requestId, {
+      items: enrichedItems,
+      pagination: result.pagination,
+    });
   }
 }

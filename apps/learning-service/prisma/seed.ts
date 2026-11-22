@@ -1,8 +1,14 @@
 import {
   BloomLevel,
+  ChallengeType,
   ContentStatus,
   DifficultyType,
+  HintType,
+  ModuleSource,
+  ModuleStatus,
   PrismaClient,
+  TierType,
+  VersionStatus,
   VisibilityType,
 } from '@prisma/client';
 
@@ -23,6 +29,15 @@ export const SEED_IDS = {
   testDraft2: '11111111-1111-4111-8111-111111111402',
   testCasePubSample: '11111111-1111-4111-8111-111111111501',
   testCasePubHidden: '11111111-1111-4111-8111-111111111502',
+  hintPubLevel1: '11111111-1111-4111-8111-111111111601',
+  hintPubLevel2: '11111111-1111-4111-8111-111111111602',
+  hintPubLevel3: '11111111-1111-4111-8111-111111111603',
+  gameModuleQuiz1: '11111111-1111-4111-8111-111111111701',
+  gameVersionQuiz1: '11111111-1111-4111-8111-111111111702',
+  badgeStreakBronze: '11111111-1111-4111-8111-111111111801',
+  badgeTopicMaster: '11111111-1111-4111-8111-111111111802',
+  challengeStreakSma: '11111111-1111-4111-8111-111111111901',
+  challengeTopicSma: '11111111-1111-4111-8111-111111111902',
 } as const;
 
 async function main() {
@@ -512,6 +527,234 @@ async function main() {
       },
     });
   }
+
+  // ==========================================
+  // SEED HINT BERTINGKAT (6. PRACTICE STUDI KASUS) & GAME MODULE QUIZ (7. SMA - QUIZ)
+  // ==========================================
+  const seedHints = [
+    {
+      id: SEED_IDS.hintPubLevel1,
+      level: 1,
+      type: HintType.PSEUDOCODE,
+      content:
+        'Langkah 1: Hitung alamat memori elemen ke-i dengan rumus base_address + (i * ukuran_elemen).\nLangkah 2: Karena operasi aritmatika ini hanya 1 langkah konstan, tentukan notasinya.',
+    },
+    {
+      id: SEED_IDS.hintPubLevel2,
+      level: 2,
+      type: HintType.CLOZE_CODE,
+      content:
+        'def get_element(arr, i):\n    # Akses langsung tanpa perulangan membutuhkan waktu O(___)\n    return arr[i]',
+    },
+    {
+      id: SEED_IDS.hintPubLevel3,
+      level: 3,
+      type: HintType.FULL_CODE,
+      content:
+        'def get_element(arr, i):\n    # Kompleksitas waktu: O(1) karena tidak bergantung pada jumlah elemen n\n    return arr[i]',
+    },
+  ];
+
+  for (const h of seedHints) {
+    await prisma.hint.upsert({
+      where: { id: h.id },
+      update: { testId: testPub1.id, level: h.level, type: h.type, content: h.content },
+      create: { id: h.id, testId: testPub1.id, level: h.level, type: h.type, content: h.content },
+    });
+  }
+
+  const quizModule = await prisma.gameModule.upsert({
+    where: { id: SEED_IDS.gameModuleQuiz1 },
+    update: {
+      slug: 'kuis-akses-array-sma',
+      name: 'Kuis Interaktif Akses Array',
+      description: 'Modul kuis pilihan ganda untuk menguji pemahaman kompleksitas akses indeks array.',
+      source: ModuleSource.TEMPLATE,
+      templateId: 'multiple_choice',
+      status: ModuleStatus.ACTIVE,
+      deletedAt: null,
+    },
+    create: {
+      id: SEED_IDS.gameModuleQuiz1,
+      slug: 'kuis-akses-array-sma',
+      name: 'Kuis Interaktif Akses Array',
+      description: 'Modul kuis pilihan ganda untuk menguji pemahaman kompleksitas akses indeks array.',
+      source: ModuleSource.TEMPLATE,
+      templateId: 'multiple_choice',
+      status: ModuleStatus.ACTIVE,
+      createdBy: '00000000-0000-4000-8000-000000000001',
+    },
+  });
+
+  const quizVersion = await prisma.gameModuleVersion.upsert({
+    where: { id: SEED_IDS.gameVersionQuiz1 },
+    update: {
+      gameModuleId: quizModule.id,
+      version: '1.0.0',
+      status: VersionStatus.PUBLISHED,
+      config: {
+        question: 'Berapakah kompleksitas waktu mengakses elemen array langsung melalui indeks ke-i?',
+        options: ['O(1)', 'O(n)', 'O(log n)', 'O(n^2)'],
+        answerIndex: 0,
+        explanation: 'Akses langsung ke indeks array menggunakan perhitungan offset memori konstan O(1).',
+      },
+      manifest: {
+        schema_version: 1,
+        name: quizModule.name,
+        slug: quizModule.slug,
+        version: '1.0.0',
+        source: 'template',
+        template_id: 'multiple_choice',
+        entry: { html: 'index.html', css: 'style.css', js: 'script.js' },
+        max_score: 100,
+      },
+      publishedAt: new Date(),
+      publishedBy: '00000000-0000-4000-8000-000000000001',
+    },
+    create: {
+      id: SEED_IDS.gameVersionQuiz1,
+      gameModuleId: quizModule.id,
+      version: '1.0.0',
+      status: VersionStatus.PUBLISHED,
+      config: {
+        question: 'Berapakah kompleksitas waktu mengakses elemen array langsung melalui indeks ke-i?',
+        options: ['O(1)', 'O(n)', 'O(log n)', 'O(n^2)'],
+        answerIndex: 0,
+        explanation: 'Akses langsung ke indeks array menggunakan perhitungan offset memori konstan O(1).',
+      },
+      manifest: {
+        schema_version: 1,
+        name: quizModule.name,
+        slug: quizModule.slug,
+        version: '1.0.0',
+        source: 'template',
+        template_id: 'multiple_choice',
+        entry: { html: 'index.html', css: 'style.css', js: 'script.js' },
+        max_score: 100,
+      },
+      publishedAt: new Date(),
+      publishedBy: '00000000-0000-4000-8000-000000000001',
+    },
+  });
+
+  // Tautkan testPub1 ke quizVersion agar halaman 7. SMA - Quiz langsung memiliki GameModuleVersion aktif
+  await prisma.test.update({
+    where: { id: testPub1.id },
+    data: { gameModuleVersionId: quizVersion.id },
+  });
+
+  // ==========================================
+  // SEED KATALOG GAMIFIKASI (CHALLENGE & BADGE SMA)
+  // ==========================================
+  const badgeStreak = await prisma.badge.upsert({
+    where: { code: 'STREAK_WARRIOR_3' },
+    update: {
+      name: 'Pejuang Konsisten',
+      description: 'Berhasil mempertahankan streak belajar 3 hari berturut-turut (Baca Materi, Practice, atau Quiz).',
+      targetValue: 3,
+    },
+    create: {
+      id: SEED_IDS.badgeStreakBronze,
+      code: 'STREAK_WARRIOR_3',
+      name: 'Pejuang Konsisten',
+      description: 'Berhasil mempertahankan streak belajar 3 hari berturut-turut (Baca Materi, Practice, atau Quiz).',
+      targetValue: 3,
+    },
+  });
+
+  const badgeTopic = await prisma.badge.upsert({
+    where: { code: 'MASTER_ARRAY_SMA' },
+    update: {
+      name: 'Master Struktur Data Dasar',
+      description: 'Menyelesaikan seluruh Materi, Practice Studi Kasus, dan Quiz pada topik Struktur Data & Algoritma Dasar.',
+      targetValue: 1,
+    },
+    create: {
+      id: SEED_IDS.badgeTopicMaster,
+      code: 'MASTER_ARRAY_SMA',
+      name: 'Master Struktur Data Dasar',
+      description: 'Menyelesaikan seluruh Materi, Practice Studi Kasus, dan Quiz pada topik Struktur Data & Algoritma Dasar.',
+      targetValue: 1,
+    },
+  });
+
+  const chStreak = await prisma.challenge.upsert({
+    where: { code: 'SMA_DAILY_STREAK' },
+    update: {
+      type: ChallengeType.STREAK,
+      educationLevelId: sma.id,
+      title: 'Tantangan Konsistensi Belajar Harian',
+      description: 'Pertahankan streak dengan membaca materi, mengerjakan practice studi kasus, atau menyelesaikan quiz.',
+      period: 'weekly',
+      isActive: true,
+    },
+    create: {
+      id: SEED_IDS.challengeStreakSma,
+      code: 'SMA_DAILY_STREAK',
+      type: ChallengeType.STREAK,
+      educationLevelId: sma.id,
+      title: 'Tantangan Konsistensi Belajar Harian',
+      description: 'Pertahankan streak dengan membaca materi, mengerjakan practice studi kasus, atau menyelesaikan quiz.',
+      period: 'weekly',
+      isActive: true,
+    },
+  });
+
+  const chTopic = await prisma.challenge.upsert({
+    where: { code: 'SMA_TOPIC_1_COMPLETION' },
+    update: {
+      type: ChallengeType.TOPIC_COMPLETION,
+      educationLevelId: sma.id,
+      gameModuleVersionId: quizVersion.id,
+      title: 'Tamatkan Topik Struktur Data & Algoritma Dasar',
+      description: 'Selesaikan seluruh materi, practice studi kasus, dan quiz pada Topik 1 SMA.',
+      period: 'permanent',
+      maxScore: 100,
+      isActive: true,
+    },
+    create: {
+      id: SEED_IDS.challengeTopicSma,
+      code: 'SMA_TOPIC_1_COMPLETION',
+      type: ChallengeType.TOPIC_COMPLETION,
+      educationLevelId: sma.id,
+      gameModuleVersionId: quizVersion.id,
+      title: 'Tamatkan Topik Struktur Data & Algoritma Dasar',
+      description: 'Selesaikan seluruh materi, practice studi kasus, dan quiz pada Topik 1 SMA.',
+      period: 'permanent',
+      maxScore: 100,
+      isActive: true,
+    },
+  });
+
+  await prisma.challengeTier.deleteMany({
+    where: { challengeId: { in: [chStreak.id, chTopic.id] } },
+  });
+
+  await prisma.challengeTier.createMany({
+    data: [
+      {
+        challengeId: chStreak.id,
+        tier: TierType.BRONZE,
+        threshold: 3,
+        rewardExp: 50,
+        badgeId: badgeStreak.id,
+      },
+      {
+        challengeId: chStreak.id,
+        tier: TierType.SILVER,
+        threshold: 7,
+        rewardExp: 150,
+        badgeId: null,
+      },
+      {
+        challengeId: chTopic.id,
+        tier: TierType.GOLD,
+        threshold: 1,
+        rewardExp: 200,
+        badgeId: badgeTopic.id,
+      },
+    ],
+  });
 
   console.log(
     `Seed learning-service selesai: jenjang=[${sd.code}, ${smp.code}, ${sma.code}], topikPublished=${topicPub.id}, soalPublished=${testPub1.id}, gameTemplates=${gameTemplates.length}`,

@@ -1,5 +1,9 @@
 generator client {
   provider = "prisma-client-js"
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/progress-client"
 }
 
 datasource db {
@@ -43,6 +47,20 @@ enum ProgressStatus {
 
 // ==========================================
 // 1. GAMIFICATION: DAILY ACTIVITY & STREAK
+// 1. USER BADGE
+// ==========================================
+
+model UserBadge {
+  userId    String   @map("user_id") @db.Uuid
+  badgeId   String   @map("badge_id") @db.Uuid
+  awardedAt DateTime @map("awarded_at") @db.Timestamptz(6)
+
+  @@id([userId, badgeId])
+  @@map("user_badge")
+}
+
+// ==========================================
+// 2. DAILY ACTIVITY
 // ==========================================
 
 model DailyActivity {
@@ -52,6 +70,10 @@ model DailyActivity {
   testsDone    Int      @default(0) @map("tests_done")
   loggedIn     Boolean  @default(false) @map("logged_in")
   freezeUsed   Boolean  @default(false) @map("freeze_used")
+  expEarned    Int      @map("exp_earned")
+  testsDone    Int      @map("tests_done")
+  loggedIn     Boolean  @map("logged_in")
+  freezeUsed   Boolean  @map("freeze_used")
 
   @@id([userId, activityDate])
   @@map("daily_activity")
@@ -96,6 +118,17 @@ model ProgressChallenge {
   currentValue Int      @default(0) @map("current_value")
   bestValue    Int      @default(0) @map("best_value")
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+// ==========================================
+// 3. PROGRESS CHALLENGE
+// ==========================================
+
+model ProgressChallenge {
+  userId      String   @map("user_id") @db.Uuid
+  challengeId String   @map("challenge_id") @db.Uuid
+  periodStart DateTime @map("period_start") @db.Date
+  currentValue Int     @map("current_value")
+  bestValue    Int     @map("best_value")
+  updatedAt    DateTime @map("updated_at") @db.Timestamptz(6)
 
   @@id([userId, challengeId, periodStart])
   @@map("progress_challenge")
@@ -111,6 +144,15 @@ model ProgressBadge {
   currentValue Int      @default(0) @map("current_value")
   targetValue  Int      @default(0) @map("target_value")
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+// 4. PROGRESS BADGE
+// ==========================================
+
+model ProgressBadge {
+  userId      String   @map("user_id") @db.Uuid
+  badgeId     String   @map("badge_id") @db.Uuid
+  currentValue Int     @map("current_value")
+  targetValue  Int     @map("target_value")
+  updatedAt    DateTime @map("updated_at") @db.Timestamptz(6)
 
   @@id([userId, badgeId])
   @@map("progress_badge")
@@ -135,6 +177,31 @@ model UserRank {
   averagePoint Decimal  @map("average_point") @db.Decimal(5, 2)
   rankTierId   String   @map("rank_tier_id") @db.Uuid
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+// ==========================================
+// 5. RANK TIER
+// ==========================================
+
+model RankTier {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @unique @db.VarChar
+  minAveragePoint Decimal  @map("min_average_point")
+  maxAveragePoint Decimal  @map("max_average_point")
+
+  userRanks UserRank[]
+
+  @@map("rank_tier")
+}
+
+// ==========================================
+// 6. USER RANK
+// ==========================================
+
+model UserRank {
+  userId      String   @map("user_id") @db.Uuid
+  menu        String   @db.VarChar
+  averagePoint Decimal @map("average_point")
+  rankTierId  String   @map("rank_tier_id") @db.Uuid
+  updatedAt   DateTime @map("updated_at") @db.Timestamptz(6)
 
   rankTier RankTier @relation(fields: [rankTierId], references: [id])
 
@@ -158,6 +225,54 @@ model Level {
   name        String  @unique @db.VarChar(50)
   minExp      Int     @unique @map("min_exp")
   iconAssetId String? @map("icon_asset_id") @db.Uuid
+  @@index([rankTierId])
+  @@map("user_rank")
+}
+
+// ==========================================
+// 7. EXP TRANSACTION
+// ==========================================
+
+model ExpTransaction {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  amount     Int
+  sourceType String   @map("source_type")
+  sourceId   String   @map("source_id") @db.Uuid
+  createdAt  DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([sourceType, sourceId])
+  @@index([createdAt, userId])
+  @@map("exp_transaction")
+}
+
+// ==========================================
+// 8. USER STAT
+// ==========================================
+
+model UserStat {
+  userId           String    @id @map("user_id") @db.Uuid
+  totalExp         BigInt    @map("total_exp")
+  currentStreak    Int       @map("current_streak")
+  longestStreak    Int       @map("longest_streak")
+  lastActivityDate DateTime? @map("last_activity_date") @db.Date
+  streakFreezeCount Int      @map("streak_freeze_count")
+  dailyTarget      Int       @map("daily_target")
+  updatedAt        DateTime  @map("updated_at") @db.Timestamptz(6)
+
+  @@map("user_stat")
+}
+
+// ==========================================
+// 9. LEVEL
+// ==========================================
+
+model Level {
+  id         String @id @default(uuid()) @db.Uuid
+  name       String @unique @db.VarChar
+  minExp     Int    @unique @map("min_exp")
+  iconAssetId String @map("icon_asset_id") @db.Uuid
 
   @@map("level")
 }
@@ -168,6 +283,16 @@ model MasteryRule {
   baseExp   Int          @map("base_exp")
   expBonus  Int          @map("exp_bonus")
   rankPoint Decimal      @map("rank_point") @db.Decimal(5, 2)
+// ==========================================
+// 10. MASTERY RULE
+// ==========================================
+
+model MasteryRule {
+  id        String  @id @default(uuid()) @db.Uuid
+  mastery   String  @unique
+  baseExp   Int     @map("base_exp")
+  expBonus  Int     @map("exp_bonus")
+  rankPoint Decimal @map("rank_point")
 
   @@map("mastery_rule")
 }
@@ -186,6 +311,19 @@ model ProgressTest {
   currentHintLevel   Int            @default(0) @map("current_hint_level") @db.SmallInt
   status             ProgressStatus
   expAwardedAt       DateTime?      @map("exp_awarded_at") @db.Timestamptz(6)
+// 11. PROGRESS TEST
+// ==========================================
+
+model ProgressTest {
+  userId          String   @map("user_id") @db.Uuid
+  testId          String   @map("test_id") @db.Uuid
+  bestScore       Decimal  @map("best_score")
+  bestMastery     String   @map("best_mastery")
+  attemptsCount   Int      @map("attempts_count")
+  wrongAttemptsCount Int   @map("wrong_attempts_count")
+  currentHintLevel Int     @map("current_hint_level") @db.SmallInt
+  status          String
+  expAwardedAt    DateTime? @map("exp_awarded_at") @db.Timestamptz(6)
 
   @@id([userId, testId])
   @@map("progress_test")
@@ -201,6 +339,20 @@ model Submission {
   durationSeconds Int          @map("duration_seconds")
   answer          Json         @db.JsonB
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+// ==========================================
+// 12. SUBMISSION
+// ==========================================
+
+model Submission {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  testId         String   @map("test_id") @db.Uuid
+  isCorrect      Boolean  @map("is_correct")
+  hintsUsed      Int      @map("hints_used") @db.SmallInt
+  mastery        String
+  durationSeconds Int     @map("duration_seconds")
+  answer         Json     @db.JsonB
+  createdAt      DateTime @map("created_at") @db.Timestamptz(6)
 
   submissionCode SubmissionCode?
   score          Score?
@@ -215,6 +367,23 @@ model SubmissionCode {
   executionStatus  String? @map("execution_status") @db.VarChar(50)
   executionTimeMs  Int?    @map("execution_time_ms")
   submissionId     String  @unique @map("submission_id") @db.Uuid
+  @@index([userId])
+  @@index([testId])
+  @@index([userId, testId])
+  @@map("submission")
+}
+
+// ==========================================
+// 13. SUBMISSION CODE
+// ==========================================
+
+model SubmissionCode {
+  id              String   @id @default(uuid()) @db.Uuid
+  sourceCode      String   @map("source_code") @db.Text
+  compileStatus   String   @map("compile_status") @db.VarChar
+  executionStatus String   @map("execution_status") @db.VarChar
+  executionTimeMs Int      @map("execution_time_ms")
+  submissionId    String   @unique @map("submission_id") @db.Uuid
 
   submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
@@ -227,6 +396,16 @@ model Score {
   aiScore      Decimal? @map("ai_score") @db.Decimal(5, 2)
   finalScore   Decimal  @map("final_score") @db.Decimal(5, 2)
   aiSuggestion String?  @map("ai_suggestion") @db.Text
+// ==========================================
+// 14. SCORE
+// ==========================================
+
+model Score {
+  id           String  @id @default(uuid()) @db.Uuid
+  submissionId String  @unique @map("submission_id") @db.Uuid
+  aiScore      Decimal @map("ai_score")
+  finalScore   Decimal @map("final_score")
+  aiSuggestion String  @map("ai_suggestion") @db.Text
 
   submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 

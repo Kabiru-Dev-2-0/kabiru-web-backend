@@ -253,6 +253,10 @@ jobs:
               echo "Running database migrations (prisma migrate deploy)..."
               IMAGE_TAG="current" docker compose -f compose.prod.yaml --profile tools run --rm learning-migrate
             fi
+            if [[ "${{ needs.changes.outputs.progress-service }}" == "true" ]]; then
+              echo "Running progress database migrations (prisma migrate deploy)..."
+              IMAGE_TAG="current" docker compose -f compose.prod.yaml --profile tools run --rm progress-migrate
+            fi
 
             # 6) Rolling update menggunakan tag :current
             echo "Starting updated containers..."
