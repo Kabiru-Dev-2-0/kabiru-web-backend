@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '.prisma/progress-client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { createRpcError } from '../common/rpc-exception.util';
 import { AwardBadgeDto, UpdateBadgeProgressDto } from './dto/update-badge-progress.dto';

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '.prisma/progress-client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getDaysDifference, normalizeToUtcDate } from '../common/date.util';
 import { serializeBigInt } from '../common/bigint.util';

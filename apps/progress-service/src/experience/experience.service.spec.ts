@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ExpSource, MasteryLevel } from '.prisma/progress-client';
+import { ExpSource, MasteryLevel } from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
 import { ExperienceService } from './experience.service';
 
