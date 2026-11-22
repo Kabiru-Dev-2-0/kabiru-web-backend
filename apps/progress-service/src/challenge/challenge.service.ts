@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '.prisma/progress-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeToUtcDate } from '../common/date.util';
 import { createRpcError } from '../common/rpc-exception.util';
@@ -72,9 +73,22 @@ export class ChallengeProgressService {
       });
     }
 
+    if (
+      (dto.incrementValue !== undefined &&
+        (!Number.isFinite(dto.incrementValue) || dto.incrementValue < 0)) ||
+      (dto.setValue !== undefined &&
+        (!Number.isFinite(dto.setValue) || dto.setValue < 0))
+    ) {
+      throw createRpcError({
+        code: 'VALIDATION_ERROR',
+        httpStatus: 400,
+        message: 'incrementValue dan setValue harus bernilai non-negatif',
+      });
+    }
+
     const periodStart = normalizeToUtcDate(dto.periodStart);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.progressChallenge.findUnique({
         where: {
           userId_challengeId_periodStart: {

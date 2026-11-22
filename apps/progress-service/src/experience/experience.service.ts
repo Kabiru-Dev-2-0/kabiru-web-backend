@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MasteryLevel } from '@prisma/client';
+import { MasteryLevel, Prisma } from '.prisma/progress-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { serializeBigInt } from '../common/bigint.util';
 import { createRpcError } from '../common/rpc-exception.util';
@@ -32,7 +32,7 @@ export class ExperienceService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 1. Buat record transaksi EXP
       const transaction = await tx.expTransaction.create({
         data: {
@@ -62,16 +62,18 @@ export class ExperienceService {
       });
 
       // 3. Evaluasi level user berdasarkan total_exp
-      const level = await tx.level.findFirst({
-        where: {
-          minExp: {
-            lte: Number(userStat.totalExp),
-          },
-        },
-        orderBy: {
-          minExp: 'desc',
-        },
+      const levels = await tx.level.findMany({
+        orderBy: { minExp: 'asc' },
       });
+
+      let level = null;
+      for (const candidate of levels) {
+        if (BigInt(candidate.minExp) <= userStat.totalExp) {
+          level = candidate;
+        } else {
+          break;
+        }
+      }
 
       return {
         transaction,
@@ -116,36 +118,35 @@ export class ExperienceService {
       where: { userId },
     });
 
-    const totalExp = Number(stat?.totalExp ?? 0);
-
-    const currentLevel = await this.prisma.level.findFirst({
-      where: {
-        minExp: {
-          lte: totalExp,
-        },
-      },
-      orderBy: {
-        minExp: 'desc',
-      },
+    const totalExp = stat?.totalExp ?? BigInt(0);
+    const levels = await this.prisma.level.findMany({
+      orderBy: { minExp: 'asc' },
     });
 
-    const nextLevel = await this.prisma.level.findFirst({
-      where: {
-        minExp: {
-          gt: totalExp,
-        },
-      },
-      orderBy: {
-        minExp: 'asc',
-      },
-    });
+    let currentLevel = null;
+    let nextLevel = null;
+    for (const level of levels) {
+      if (BigInt(level.minExp) <= totalExp) {
+        currentLevel = level;
+      } else {
+        nextLevel = level;
+        break;
+      }
+    }
+
+    const expToNext = nextLevel
+      ? Number(BigInt(nextLevel.minExp) - totalExp)
+      : 0;
+    const totalExpOutput = totalExp <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(totalExp)
+      : totalExp.toString();
 
     return {
       userId,
-      totalExp,
+      totalExp: totalExpOutput,
       currentLevel: currentLevel ?? null,
       nextLevel: nextLevel ?? null,
-      expToNextLevel: nextLevel ? nextLevel.minExp - totalExp : 0,
+      expToNextLevel: expToNext,
     };
   }
 

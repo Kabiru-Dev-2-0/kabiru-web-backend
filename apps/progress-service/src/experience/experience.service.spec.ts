@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ExpSource, MasteryLevel } from '@prisma/client';
+import { ExpSource, MasteryLevel } from '.prisma/progress-client';
 import type { PrismaService } from '../prisma/prisma.service';
 import { ExperienceService } from './experience.service';
 
@@ -34,12 +34,14 @@ describe('ExperienceService', () => {
             },
           },
           level: {
-            findFirst: async () => ({
-              id: 'lvl-1',
-              name: 'Level 1',
-              minExp: 100,
-              iconAssetId: null,
-            }),
+            findMany: async () => [
+              {
+                id: 'lvl-1',
+                name: 'Level 1',
+                minExp: 100,
+                iconAssetId: null,
+              },
+            ],
           },
         });
       },
@@ -114,5 +116,28 @@ describe('ExperienceService', () => {
 
     const fetched = await service.getMasteryRule(MasteryLevel.BEGINNER);
     assert.equal(fetched?.mastery, MasteryLevel.BEGINNER);
+  });
+
+  it('tidak mengubah totalExp besar menjadi Number saat menghitung level', async () => {
+    const prismaMock = {
+      userStat: {
+        findUnique: async () => ({
+          userId: 'user-1',
+          totalExp: BigInt('9007199254740993'),
+        }),
+      },
+      level: {
+        findMany: async () => [
+          { id: 'lvl-1', name: 'Beginner', minExp: 0, iconAssetId: null },
+          { id: 'lvl-2', name: 'Intermediate', minExp: 100, iconAssetId: null },
+        ],
+      },
+    } as unknown as PrismaService;
+
+    const service = new ExperienceService(prismaMock);
+    const result = await service.getUserLevel('user-1');
+
+    assert.equal(result.totalExp, '9007199254740993');
+    assert.equal(result.currentLevel?.name, 'Intermediate');
   });
 });

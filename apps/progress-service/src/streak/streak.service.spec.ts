@@ -162,9 +162,9 @@ describe('StreakService', () => {
       activityDate: today,
     });
 
-    assert.equal(updatedData.currentStreak, 6);
+    assert.equal(updatedData.currentStreak, 5);
     assert.equal(updatedData.streakFreezeCount, 1);
-    assert.equal(result.currentStreak, 6);
+    assert.equal(result.currentStreak, 5);
   });
 
   it('mereset streak ke 1 jika terlewat hari dan tidak memiliki freeze', async () => {

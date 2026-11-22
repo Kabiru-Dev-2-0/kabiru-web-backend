@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '.prisma/progress-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { createRpcError } from '../common/rpc-exception.util';
 import { AwardBadgeDto, UpdateBadgeProgressDto } from './dto/update-badge-progress.dto';
@@ -71,7 +72,22 @@ export class BadgeProgressService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    if (
+      (dto.incrementValue !== undefined &&
+        (!Number.isFinite(dto.incrementValue) || dto.incrementValue < 0)) ||
+      (dto.setValue !== undefined &&
+        (!Number.isFinite(dto.setValue) || dto.setValue < 0)) ||
+      (dto.targetValue !== undefined &&
+        (!Number.isFinite(dto.targetValue) || dto.targetValue <= 0))
+    ) {
+      throw createRpcError({
+        code: 'VALIDATION_ERROR',
+        httpStatus: 400,
+        message: 'incrementValue dan setValue harus non-negatif, serta targetValue harus lebih dari 0',
+      });
+    }
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.progressBadge.findUnique({
         where: {
           userId_badgeId: {

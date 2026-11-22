@@ -7,6 +7,8 @@ import { StreakModule } from './streak/streak.module';
 import { ChallengeProgressModule } from './challenge/challenge.module';
 import { BadgeProgressModule } from './badge/badge.module';
 import { RankModule } from './rank/rank.module';
+import { LeaderboardController } from './leaderboard/leaderboard.controller';
+import { LeaderboardService } from './leaderboard/leaderboard.service';
 
 @Module({
   imports: [
@@ -18,22 +20,7 @@ import { RankModule } from './rank/rank.module';
     BadgeProgressModule,
     RankModule,
   ],
-  controllers: [AppController],
-  providers: [],
-})
-export class AppModule {}
-import { LeaderboardController } from './leaderboard/leaderboard.controller';
-import { LeaderboardService } from './leaderboard/leaderboard.service';
-import { PrismaModule } from './prisma/prisma.module';
-
-@Module({
-  controllers: [
-    AppController,
-    LeaderboardController,
-  ],
-
-  imports: [PrismaModule],
-
+  controllers: [AppController, LeaderboardController],
   providers: [LeaderboardService],
 })
 export class AppModule {}

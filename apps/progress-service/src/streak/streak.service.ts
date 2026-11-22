@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '.prisma/progress-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getDaysDifference, normalizeToUtcDate } from '../common/date.util';
 import { serializeBigInt } from '../common/bigint.util';
@@ -55,7 +56,7 @@ export class StreakService {
 
     const today = normalizeToUtcDate(dto.activityDate);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       let stat = await tx.userStat.findUnique({
         where: { userId: dto.userId },
       });
@@ -110,9 +111,8 @@ export class StreakService {
       } else {
         // Terlewat lebih dari 1 hari: periksa apakah ada streak freeze yang tersedia
         if (stat.streakFreezeCount > 0) {
-          // Gunakan 1 freeze dan pertahankan streak
-          const newCurrent = stat.currentStreak + 1;
-          const newLongest = Math.max(stat.longestStreak, newCurrent);
+          // Gunakan 1 freeze dan pertahankan streak saat ini
+          const newLongest = Math.max(stat.longestStreak, stat.currentStreak);
 
           // Tandai freeze_used pada daily_activity hari ini
           await tx.dailyActivity.upsert({
@@ -135,7 +135,7 @@ export class StreakService {
           const updated = await tx.userStat.update({
             where: { userId: dto.userId },
             data: {
-              currentStreak: newCurrent,
+              currentStreak: stat.currentStreak,
               longestStreak: newLongest,
               lastActivityDate: today,
               streakFreezeCount: stat.streakFreezeCount - 1,

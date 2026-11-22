@@ -78,10 +78,12 @@ async function seed(): Promise<void> {
   }
 
   const masteryRules = [
-    { id: '30000000-0000-4000-8000-000000000001', mastery: 'BEGINNER', baseExp: 10, expBonus: 0, rankPoint: new Prisma.Decimal(40) },
-    { id: '30000000-0000-4000-8000-000000000002', mastery: 'INTERMEDIATE', baseExp: 20, expBonus: 5, rankPoint: new Prisma.Decimal(60) },
-    { id: '30000000-0000-4000-8000-000000000003', mastery: 'ADVANCED', baseExp: 30, expBonus: 10, rankPoint: new Prisma.Decimal(80) },
-    { id: '30000000-0000-4000-8000-000000000004', mastery: 'EXPERT', baseExp: 40, expBonus: 20, rankPoint: new Prisma.Decimal(100) },
+    { id: '30000000-0000-4000-8000-000000000001', mastery: 'NOVICE', baseExp: 10, expBonus: 0, rankPoint: new Prisma.Decimal(40) },
+    { id: '30000000-0000-4000-8000-000000000002', mastery: 'BEGINNER', baseExp: 20, expBonus: 5, rankPoint: new Prisma.Decimal(60) },
+    { id: '30000000-0000-4000-8000-000000000003', mastery: 'ADVANCE_BEGINNER', baseExp: 30, expBonus: 10, rankPoint: new Prisma.Decimal(70) },
+    { id: '30000000-0000-4000-8000-000000000004', mastery: 'ADVANCE', baseExp: 40, expBonus: 15, rankPoint: new Prisma.Decimal(80) },
+    { id: '30000000-0000-4000-8000-000000000005', mastery: 'COMPETENT', baseExp: 50, expBonus: 20, rankPoint: new Prisma.Decimal(90) },
+    { id: '30000000-0000-4000-8000-000000000006', mastery: 'EXPERT', baseExp: 60, expBonus: 25, rankPoint: new Prisma.Decimal(100) },
   ];
   for (const item of masteryRules) {
     await prisma.masteryRule.upsert({ where: { id: item.id }, update: item, create: item });
@@ -157,9 +159,9 @@ async function seed(): Promise<void> {
   }
 
   const expTransactions = [
-    { id: '40000000-0000-4000-8000-000000000001', userId: ids.users.user1, amount: 50, sourceType: 'TEST_COMPLETION', sourceId: ids.tests.test1, createdAt: relativeTimestamp(3, 10) },
-    { id: '40000000-0000-4000-8000-000000000002', userId: ids.users.user1, amount: 30, sourceType: 'DAILY_CHALLENGE', sourceId: ids.challenges.challenge1, createdAt: relativeTimestamp(4, 9) },
-    { id: '40000000-0000-4000-8000-000000000003', userId: ids.users.user2, amount: 40, sourceType: 'TEST_COMPLETION', sourceId: ids.tests.test2, createdAt: relativeTimestamp(4, 8) },
+    { id: '40000000-0000-4000-8000-000000000001', userId: ids.users.user1, amount: 50, sourceType: 'QUIZ', sourceId: ids.tests.test1, createdAt: relativeTimestamp(3, 10) },
+    { id: '40000000-0000-4000-8000-000000000002', userId: ids.users.user1, amount: 30, sourceType: 'CHALLENGE', sourceId: ids.challenges.challenge1, createdAt: relativeTimestamp(4, 9) },
+    { id: '40000000-0000-4000-8000-000000000003', userId: ids.users.user2, amount: 40, sourceType: 'QUIZ', sourceId: ids.tests.test2, createdAt: relativeTimestamp(4, 8) },
   ];
   for (const item of expTransactions) {
     await prisma.expTransaction.upsert({ where: { id: item.id }, update: item, create: item });
@@ -167,7 +169,7 @@ async function seed(): Promise<void> {
 
   const progressTests = [
     { userId: ids.users.user1, testId: ids.tests.test1, bestScore: new Prisma.Decimal('95.50'), bestMastery: 'EXPERT', attemptsCount: 3, wrongAttemptsCount: 1, currentHintLevel: 0, status: 'COMPLETED', expAwardedAt: relativeTimestamp(3, 10) },
-    { userId: ids.users.user2, testId: ids.tests.test2, bestScore: new Prisma.Decimal('72.00'), bestMastery: 'INTERMEDIATE', attemptsCount: 2, wrongAttemptsCount: 2, currentHintLevel: 1, status: 'IN_PROGRESS', expAwardedAt: null },
+    { userId: ids.users.user2, testId: ids.tests.test2, bestScore: new Prisma.Decimal('72.00'), bestMastery: 'BEGINNER', attemptsCount: 2, wrongAttemptsCount: 2, currentHintLevel: 1, status: 'IN_PROGRESS', expAwardedAt: null },
   ];
   for (const item of progressTests) {
     await prisma.progressTest.upsert({
@@ -179,7 +181,7 @@ async function seed(): Promise<void> {
 
   const submissions = [
     { id: ids.submissions.submission1, userId: ids.users.user1, testId: ids.tests.test1, isCorrect: true, hintsUsed: 0, mastery: 'EXPERT', durationSeconds: 120, answer: { language: 'python', code: 'print(3.14 * 5 ** 2)', expectedOutput: '78.5' }, createdAt: relativeTimestamp(3, 10) },
-    { id: ids.submissions.submission2, userId: ids.users.user2, testId: ids.tests.test2, isCorrect: false, hintsUsed: 1, mastery: 'INTERMEDIATE', durationSeconds: 240, answer: { language: 'python', code: 'print(3.14 * 5)', expectedOutput: '78.5' }, createdAt: relativeTimestamp(4, 8) },
+    { id: ids.submissions.submission2, userId: ids.users.user2, testId: ids.tests.test2, isCorrect: false, hintsUsed: 1, mastery: 'BEGINNER', durationSeconds: 240, answer: { language: 'python', code: 'print(3.14 * 5)', expectedOutput: '78.5' }, createdAt: relativeTimestamp(4, 8) },
   ];
   for (const item of submissions) {
     await prisma.submission.upsert({ where: { id: item.id }, update: item, create: item });
