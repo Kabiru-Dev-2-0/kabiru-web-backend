@@ -2,8 +2,8 @@
   "name": "@ai-service/ai-service",
   "private": true,
   "scripts": {
-    "start:dev": "nest start --watch",
-    "build": "prisma generate && nest build",
+    "start:dev": "bun run prisma:generate && nest start --watch",
+    "build": "bun run prisma:generate && nest build",
     "start:prod": "bun run dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
