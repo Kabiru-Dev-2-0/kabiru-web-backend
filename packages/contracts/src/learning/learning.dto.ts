@@ -226,7 +226,7 @@ export interface TestHintDetailDto {
   content: string;
 }
 
-// 6. Halaman SMA - Practice Studi Kasus
+// 6. Halaman SMA - Practice Studi Kasus (Mendukung fill_blank, code_debugger, dan case_study)
 export interface PracticeCaseStudyItemDto {
   id: string;
   materialId: string;
@@ -238,6 +238,8 @@ export interface PracticeCaseStudyItemDto {
   difficulty: DifficultyTypeDto;
   bloomLevel: BloomLevelDto;
   maxAttempts: number | null;
+  gameModuleVersionId: string | null;
+  gameModule: QuizGameModuleSummaryDto | null;
   payload: Record<string, unknown> | null;
   sampleTestCases: PublicTestCaseDto[];
   availableHints: HintSummaryDto[];

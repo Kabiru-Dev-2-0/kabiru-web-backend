@@ -816,7 +816,7 @@ export class CurriculumService {
         deletedAt: null,
         ...(!isAuthor ? { status: ContentStatus.PUBLISHED } : {}),
         OR: [
-          { questionType: { in: ['case_study', 'code_debugger'] } },
+          { questionType: { in: ['case_study', 'code_debugger', 'fill_blank'] } },
           { testCases: { some: {} } },
           { hints: { some: {} } },
         ],
@@ -831,32 +831,63 @@ export class CurriculumService {
           orderBy: { level: 'asc' },
           select: { id: true, level: true, type: true },
         },
+        gameModuleVersion: {
+          include: {
+            gameModule: true,
+          },
+        },
       },
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      materialId: row.materialId,
-      number: row.number,
-      title: row.title,
-      questionType: row.questionType as QuestionTypeDto,
-      prompt: row.prompt,
-      points: row.points,
-      difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
-      bloomLevel: row.bloomLevel.toLowerCase() as BloomLevelDto,
-      maxAttempts: row.maxAttempts,
-      payload: (row.payload as Record<string, unknown> | null) ?? null,
-      sampleTestCases: row.testCases.map((tc) => ({
-        id: tc.id,
-        input: tc.input,
-        expectedOutput: tc.expectedOutput,
-      })),
-      availableHints: row.hints.map((h) => ({
-        id: h.id,
-        level: h.level,
-        type: h.type.toLowerCase() as HintTypeDto,
-      })),
-    }));
+    return rows.map((row) => {
+      const gmv = row.gameModuleVersion;
+      const manifestObj =
+        gmv?.manifest && typeof gmv.manifest === 'object'
+          ? (gmv.manifest as Record<string, unknown>)
+          : {};
+      const maxScore = typeof manifestObj.max_score === 'number' ? manifestObj.max_score : row.points;
+
+      return {
+        id: row.id,
+        materialId: row.materialId,
+        number: row.number,
+        title: row.title,
+        questionType: row.questionType as QuestionTypeDto,
+        prompt: row.prompt,
+        points: row.points,
+        difficulty: row.difficulty.toLowerCase() as DifficultyTypeDto,
+        bloomLevel: row.bloomLevel.toLowerCase() as BloomLevelDto,
+        maxAttempts: row.maxAttempts,
+        gameModuleVersionId: row.gameModuleVersionId,
+        gameModule: gmv
+          ? {
+              versionId: gmv.id,
+              gameModuleId: gmv.gameModuleId,
+              moduleSlug: gmv.gameModule.slug,
+              moduleName: gmv.gameModule.name,
+              source: gmv.gameModule.source.toLowerCase() as 'template' | 'custom',
+              templateId: gmv.gameModule.templateId,
+              version: gmv.version,
+              maxScore,
+              config:
+                gmv.config && typeof gmv.config === 'object'
+                  ? (gmv.config as Record<string, unknown>)
+                  : {},
+            }
+          : null,
+        payload: (row.payload as Record<string, unknown> | null) ?? null,
+        sampleTestCases: row.testCases.map((tc) => ({
+          id: tc.id,
+          input: tc.input,
+          expectedOutput: tc.expectedOutput,
+        })),
+        availableHints: row.hints.map((h) => ({
+          id: h.id,
+          level: h.level,
+          type: h.type.toLowerCase() as HintTypeDto,
+        })),
+      };
+    });
   }
 
   async getTestHintByLevel(
