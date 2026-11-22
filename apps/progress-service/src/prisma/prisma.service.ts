@@ -3,7 +3,6 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-
 import { PrismaClient } from '.prisma/progress-client';
 
 @Injectable()
