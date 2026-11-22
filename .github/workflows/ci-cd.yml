@@ -119,10 +119,6 @@ jobs:
         if: ${{ needs.changes.outputs.learning-service == 'true' }}
         run: bun run --cwd apps/learning-service prisma:generate
 
-      - name: Generate Prisma Client (if progress-service affected)
-        if: ${{ needs.changes.outputs.progress-service == 'true' }}
-        run: bun run --cwd apps/progress-service prisma:generate
-
       - name: Typecheck & Build affected services
         run: |
           for svc in $(echo '${{ needs.changes.outputs.matrix }}' | jq -r '.[]'); do

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MasteryLevel, Prisma } from '@prisma/client';
+import { MasteryLevel, Prisma } from '.prisma/progress-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { serializeBigInt } from '../common/bigint.util';
 import { createRpcError } from '../common/rpc-exception.util';

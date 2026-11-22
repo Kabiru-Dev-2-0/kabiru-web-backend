@@ -1,4 +1,4 @@
-import { ExpSource, MasteryLevel } from '@prisma/client';
+import { ExpSource, MasteryLevel } from '.prisma/progress-client';
 
 export interface AddExperienceDto {
   userId: string;

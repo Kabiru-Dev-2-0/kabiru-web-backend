@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
-import { MasteryLevel } from '@prisma/client';
+import { MasteryLevel } from '.prisma/progress-client';
 import { ExperienceService } from './experience.service';
 import {
   AddExperienceDto,

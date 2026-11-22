@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '.prisma/progress-client';
 
 const prisma = new PrismaClient();
 const dateOnly = (value: string): Date => new Date(`${value}T00:00:00.000Z`);
