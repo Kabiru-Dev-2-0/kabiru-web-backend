@@ -2,21 +2,34 @@
   "name": "@progress-service/progress-service",
   "private": true,
   "scripts": {
-    "start:dev": "nest start --watch",
-    "build": "nest build",
-    "start:prod": "bun run dist/main.js"
+    "test": "bun test",
+    "start:dev": "bun run prisma:generate && nest start --watch",
+    "build": "bun run prisma:generate && nest build",
+    "start:prod": "bun run dist/main.js",
+    "prisma:generate": "prisma generate",
+    "db:seed": "bun run prisma:generate && prisma migrate deploy && bun run prisma/seed.ts",
+    "prisma:seed": "bun run prisma:generate && bun run prisma/seed.ts",
+    "prisma:db:seed": "bun run prisma:generate && prisma db seed",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:status": "prisma migrate status",
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@kabiru/contracts": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/microservices": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "@prisma/client": "^6.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
+    "@types/bun": "^1.4.5",
     "@types/node": "^22.0.0",
+    "prisma": "^6.4.0",
     "typescript": "^5.7.0"
   }
 }

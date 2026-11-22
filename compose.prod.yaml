@@ -48,6 +48,19 @@ services:
     networks:
       - kabiru_internal
 
+  progress-migrate:
+    image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-progress-service:${IMAGE_TAG:-main}
+    profiles: ["tools"]
+    command: ["bun", "run", "prisma:deploy"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${PROGRESS_DATABASE_URL:-${DATABASE_URL:?PROGRESS_DATABASE_URL atau DATABASE_URL wajib diisi di .env VPS}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kabiru_internal
+
   auth-service:
     image: ghcr.io/${GHCR_OWNER:-kabiru-dev-2-0}/kabiru-auth-service:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -93,9 +106,12 @@ services:
     environment:
       NODE_ENV: production
       SERVICE_PORT: 4014
+      DATABASE_URL: ${PROGRESS_DATABASE_URL:-${DATABASE_URL:?PROGRESS_DATABASE_URL atau DATABASE_URL wajib diisi di .env VPS}}
       REDIS_URL: redis://redis:6379
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - kabiru_internal

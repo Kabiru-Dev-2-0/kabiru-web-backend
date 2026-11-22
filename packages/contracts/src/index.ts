@@ -10,3 +10,6 @@ export * from './auth/auth.dto';
 export * from './patterns/game.patterns';
 export * from './game/game.dto';
 export * from './game/game.schemas';
+export * from './patterns/progress.patterns';
+export * from './progress/leaderboard.dto';
+export * from './progress/leaderboard.schemas';
