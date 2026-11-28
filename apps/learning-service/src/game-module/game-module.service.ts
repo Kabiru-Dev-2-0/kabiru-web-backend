@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import {
+  HexColorSchema,
   MAX_MODULE_VERSION_BYTES,
   ManifestSchema,
   createServiceError,
@@ -45,7 +46,13 @@ import type { PaginatedResult } from '../curriculum/curriculum.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssetService } from '../storage/asset.service';
 import { R2StorageService } from '../storage/r2-storage.service';
-import { materializeTemplateFiles } from './templates/template-engine.registry';
+import {
+  buildBlankCustomStarterFiles,
+  materializeTemplateFiles,
+  resolveTemplateStarterFiles,
+  toStudioFilesArray,
+  type MaterializedTemplateFile,
+} from './templates/template-engine.registry';
 
 const PRISMA_TO_DTO_SOURCE: Record<ModuleSource, ModuleSourceDto> = {
   [ModuleSource.TEMPLATE]: 'template',
@@ -116,18 +123,6 @@ export class GameModuleService {
     private readonly r2Storage: R2StorageService,
   ) {}
 
-  private assertCustomRoleAllowed(actor: ActorContext): void {
-    if (actor.role !== 'developer' && actor.role !== 'admin') {
-      throw new RpcException(
-        createServiceError({
-          code: 'FORBIDDEN',
-          httpStatus: 403,
-          message: 'Jalur modul custom hanya diizinkan untuk role developer atau admin.',
-        }),
-      );
-    }
-  }
-
   private assertModuleAccess(mod: { createdBy: string }, actor: ActorContext): void {
     if (actor.role === 'teacher' && mod.createdBy !== actor.userId) {
       throw new RpcException(
@@ -139,6 +134,86 @@ export class GameModuleService {
       );
     }
   }
+
+private async seedVersionStarterFiles(
+  versionId: string,
+  storagePrefix: string,
+  files: MaterializedTemplateFile[],
+  uploadedBy: string,
+): Promise<void> {
+  for (const f of files) {
+    const asset = await this.assetService.uploadAndUpsertAsset({
+      storagePath: `${storagePrefix}/${f.relativePath}`,
+      buffer: Buffer.from(f.content, 'utf8'),
+      mimeType: f.mimeType,
+      uploadedBy,
+    });
+    await this.prisma.gameModuleFile.upsert({
+      where: {
+        gameModuleVersionId_relativePath: { gameModuleVersionId: versionId, relativePath: f.relativePath },
+      },
+      update: { assetId: asset.id, isEntrypoint: f.isEntrypoint },
+      create: {
+        gameModuleVersionId: versionId,
+        assetId: asset.id,
+        relativePath: f.relativePath,
+        isEntrypoint: f.isEntrypoint,
+      },
+    });
+  }
+}
+
+private async sanitizeAndResolveConfig(rawConfig: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const next = { ...rawConfig };
+
+  // 1. Validasi seluruh warna di config.theme menggunakan HexColorSchema (FR-27)
+  if (next.theme && typeof next.theme === 'object' && !Array.isArray(next.theme)) {
+    for (const [key, val] of Object.entries(next.theme as Record<string, unknown>)) {
+      if (val !== null && val !== undefined && !HexColorSchema.safeParse(val).success) {
+        throw new RpcException(
+          createServiceError({
+            code: 'VALIDATION_ERROR',
+            httpStatus: 400,
+            message: `Nilai warna '${key}' tidak valid. Gunakan format Hex (#RRGGBB).`,
+          }),
+        );
+      }
+    }
+  }
+
+  // 2. Resolusi config.assets[slot].assetId ke publicUrl R2 resmi milik sistem (OWASP A10)
+  if (next.assets && typeof next.assets === 'object' && !Array.isArray(next.assets)) {
+    const resolvedAssets: Record<string, unknown> = {};
+    for (const [slot, val] of Object.entries(next.assets as Record<string, unknown>)) {
+      if (!val || typeof val !== 'object') {
+        resolvedAssets[slot] = null;
+        continue;
+      }
+      const assetId = (val as Record<string, unknown>).assetId;
+      if (typeof assetId !== 'string') {
+        resolvedAssets[slot] = null;
+        continue;
+      }
+      const assetRow = await this.prisma.asset.findUnique({ where: { id: assetId } });
+      if (!assetRow) {
+        throw new RpcException(
+          createServiceError({
+            code: 'VALIDATION_ERROR',
+            httpStatus: 400,
+            message: `Asset pada slot '${slot}' tidak ditemukan di penyimpanan KABIRU.`,
+          }),
+        );
+      }
+      resolvedAssets[slot] = {
+        assetId: assetRow.id,
+        url: this.r2Storage.getPublicUrl(assetRow.storagePath),
+      };
+    }
+    next.assets = resolvedAssets;
+  }
+
+  return next;
+}
 
   // ==========================================
   // 1. TEMPLATE CATALOG
@@ -187,12 +262,16 @@ export class GameModuleService {
       );
     }
 
+    const rawStarter = (row as unknown as Record<string, unknown>).starterFiles;
+    const starterFiles = await resolveTemplateStarterFiles(row.id, asRecord(rawStarter));
+
     return {
       id: row.id,
       name: row.name,
       description: row.description,
       configSchema: asRecord(row.configSchema),
       defaultConfig: asRecord(row.defaultConfig),
+      starterFiles,
       isActive: row.isActive,
       createdAt: row.createdAt.toISOString(),
     };
@@ -329,14 +408,11 @@ export class GameModuleService {
     dto: CreateGameModuleDto,
     actor: ActorContext | null,
   ): Promise<GameModuleDetailDto> {
+    // FR-20b: Guru, Developer, dan Admin dapat memilih jalur template maupun custom
     const author = assertAuthorRole(actor);
 
-    // FR-16: Guru tidak boleh membuat modul custom
-    if (dto.source === 'custom') {
-      this.assertCustomRoleAllowed(author);
-    }
-
     let initialConfig: Record<string, unknown> = {};
+    let templateRecord: GameTemplate | null = null;
     if (dto.source === 'template' && dto.templateId) {
       const template = await this.prisma.gameTemplate.findUnique({
         where: { id: dto.templateId },
@@ -350,6 +426,7 @@ export class GameModuleService {
           }),
         );
       }
+      templateRecord = template;
       initialConfig = asRecord(template.defaultConfig);
     }
 
@@ -383,6 +460,7 @@ export class GameModuleService {
               template_id: dto.source === 'template' ? dto.templateId : null,
               entry: { html: 'index.html', css: 'style.css', js: 'script.js' },
               max_score: 100,
+              custom_result_screen: false,
             } as Prisma.InputJsonValue,
           },
         },
@@ -392,6 +470,18 @@ export class GameModuleService {
         versions: { orderBy: { createdAt: 'desc' } },
       },
     });
+
+    const firstVersion = created.versions[0];
+    if (firstVersion) {
+      const storagePrefix = firstVersion.storagePrefix ?? `games/${finalSlug}/1.0.0`;
+      const rawStarter = (templateRecord as unknown as Record<string, unknown> | null)?.starterFiles;
+      const initialFiles =
+        dto.source === 'template' && dto.templateId
+          ? toStudioFilesArray(await resolveTemplateStarterFiles(dto.templateId, asRecord(rawStarter)))
+          : buildBlankCustomStarterFiles(dto.name);
+
+      await this.seedVersionStarterFiles(firstVersion.id, storagePrefix, initialFiles, author.userId);
+    }
 
     return {
       id: created.id,
@@ -559,9 +649,6 @@ export class GameModuleService {
     }
 
     this.assertModuleAccess(mod, author);
-    if (mod.source === ModuleSource.CUSTOM) {
-      this.assertCustomRoleAllowed(author);
-    }
 
     const duplicate = await this.prisma.gameModuleVersion.findUnique({
       where: {
@@ -584,13 +671,14 @@ export class GameModuleService {
 
     const storagePrefix = `games/${mod.slug}/${dto.version}`;
     const sourceDto = PRISMA_TO_DTO_SOURCE[mod.source];
+    const cleanConfig = await this.sanitizeAndResolveConfig(dto.config);
 
     const created = await this.prisma.gameModuleVersion.create({
       data: {
         gameModuleId: mod.id,
         version: dto.version,
         status: VersionStatus.DRAFT,
-        config: dto.config as Prisma.InputJsonValue,
+        config: cleanConfig as Prisma.InputJsonValue,
         storagePrefix,
         manifest: {
           schema_version: 1,
@@ -601,6 +689,7 @@ export class GameModuleService {
           template_id: mod.templateId,
           entry: { html: 'index.html', css: 'style.css', js: 'script.js' },
           max_score: 100,
+          custom_result_screen: false,
         } as Prisma.InputJsonValue,
       },
       include: {
@@ -609,7 +698,14 @@ export class GameModuleService {
       },
     });
 
-    return this.mapVersionDetail(created, true);
+    const rawStarter = (mod.template as unknown as Record<string, unknown> | null)?.starterFiles;
+    const initialFiles =
+      mod.source === ModuleSource.TEMPLATE && mod.templateId
+        ? toStudioFilesArray(await resolveTemplateStarterFiles(mod.templateId, asRecord(rawStarter)))
+        : buildBlankCustomStarterFiles(mod.name);
+
+    await this.seedVersionStarterFiles(created.id, storagePrefix, initialFiles, author.userId);
+    return this.getVersionDetail({ versionId: created.id }, author);
   }
 
   async getVersionDetail(
@@ -674,10 +770,12 @@ export class GameModuleService {
       );
     }
 
+    const cleanConfig = await this.sanitizeAndResolveConfig(dto.config);
+
     const updated = await this.prisma.gameModuleVersion.update({
       where: { id: row.id },
       data: {
-        config: dto.config as Prisma.InputJsonValue,
+        config: cleanConfig as Prisma.InputJsonValue,
       },
       include: {
         gameModule: { include: { template: true } },
@@ -693,8 +791,6 @@ export class GameModuleService {
     actor: ActorContext | null,
   ): Promise<GameModuleVersionDetailDto> {
     const author = assertAuthorRole(actor);
-    // FR-16: Guru ditolak pada endpoint custom
-    this.assertCustomRoleAllowed(author);
 
     const row = await this.prisma.gameModuleVersion.findUnique({
       where: { id: dto.versionId },
@@ -711,15 +807,8 @@ export class GameModuleService {
       );
     }
 
-    if (row.gameModule.source !== ModuleSource.CUSTOM) {
-      throw new RpcException(
-        createServiceError({
-          code: 'VALIDATION_ERROR',
-          httpStatus: 400,
-          message: 'Endpoint saveCustomFiles hanya berlaku untuk modul dengan source=custom.',
-        }),
-      );
-    }
+    // FR-20b & FR-20c: Guru, Developer, dan Admin dapat mengedit berkas versi di Monaco selama modul miliknya sendiri
+    this.assertModuleAccess(row.gameModule, author);
 
     if (row.status !== VersionStatus.DRAFT) {
       throw new RpcException(
@@ -799,6 +888,59 @@ export class GameModuleService {
     return this.getVersionDetail({ versionId: row.id }, author);
   }
 
+  async resetTemplateFiles(
+    params: GameVersionIdParamDto,
+    actor: ActorContext | null,
+  ): Promise<GameModuleVersionDetailDto> {
+    const author = assertAuthorRole(actor);
+
+    const row = await this.prisma.gameModuleVersion.findUnique({
+      where: { id: params.versionId },
+      include: { gameModule: { include: { template: true } } },
+    });
+
+    if (!row || row.gameModule.deletedAt !== null) {
+      throw new RpcException(
+        createServiceError({
+          code: 'NOT_FOUND',
+          httpStatus: 404,
+          message: 'Versi modul game tidak ditemukan.',
+        }),
+      );
+    }
+
+    this.assertModuleAccess(row.gameModule, author);
+
+    if (row.status !== VersionStatus.DRAFT) {
+      throw new RpcException(
+        createServiceError({
+          code: 'CONFLICT',
+          httpStatus: 409,
+          message: 'Hanya versi berstatus DRAFT yang dapat di-reset ke starter code template.',
+        }),
+      );
+    }
+
+    if (row.gameModule.source !== ModuleSource.TEMPLATE || !row.gameModule.templateId) {
+      throw new RpcException(
+        createServiceError({
+          code: 'VALIDATION_ERROR',
+          httpStatus: 400,
+          message: 'Fitur reset starter code hanya berlaku untuk modul berbasis template.',
+        }),
+      );
+    }
+
+    const storagePrefix = row.storagePrefix ?? `games/${row.gameModule.slug}/${row.version}`;
+    const rawStarter = (row.gameModule.template as unknown as Record<string, unknown> | null)?.starterFiles;
+    const starterFiles = toStudioFilesArray(
+      await resolveTemplateStarterFiles(row.gameModule.templateId, asRecord(rawStarter)),
+    );
+
+    await this.seedVersionStarterFiles(row.id, storagePrefix, starterFiles, author.userId);
+    return this.getVersionDetail({ versionId: row.id }, author);
+  }
+
   async publishVersion(
     dto: PublishGameVersionDto,
     actor: ActorContext | null,
@@ -824,9 +966,6 @@ export class GameModuleService {
     }
 
     this.assertModuleAccess(row.gameModule, author);
-    if (row.gameModule.source === ModuleSource.CUSTOM) {
-      this.assertCustomRoleAllowed(author);
-    }
 
     if (row.status !== VersionStatus.DRAFT) {
       throw new RpcException(
@@ -840,9 +979,11 @@ export class GameModuleService {
 
     const storagePrefix = row.storagePrefix ?? `games/${row.gameModule.slug}/${row.version}`;
     const sourceDto = PRISMA_TO_DTO_SOURCE[row.gameModule.source];
-    const maxScore = dto.maxScore ?? (asRecord(row.manifest).max_score as number | undefined) ?? 100;
+    const existingManifest = asRecord(row.manifest);
+    const maxScore = dto.maxScore ?? (existingManifest.max_score as number | undefined) ?? 100;
+    const customResultScreen = Boolean(existingManifest.custom_result_screen);
 
-    // Bangun & validasi Manifest (FR-07)
+    // Bangun & validasi Manifest (FR-07 & FR-36)
     const candidateManifest = {
       schema_version: 1 as const,
       name: row.gameModule.name,
@@ -856,6 +997,7 @@ export class GameModuleService {
         js: 'script.js',
       },
       max_score: maxScore,
+      custom_result_screen: customResultScreen,
     };
 
     const manifestParsed = ManifestSchema.safeParse(candidateManifest);
@@ -869,7 +1011,9 @@ export class GameModuleService {
       );
     }
 
-    // FR-08: Jika modul berasal dari Template, materialize menjadi file fisik (index.html, style.css, script.js)
+    // FR-08 & Copy-on-Create v1.1.0:
+    // Jika versi template belum punya berkas sama sekali (draft lama), materialize penuh dari templateId.
+    // Jika sudah punya berkas (hasil Copy-on-Create / editan Monaco), pertahankan berkasnya dan suntikkan snapshot config ke script.js.
     if (row.gameModule.source === ModuleSource.TEMPLATE) {
       const templateId = row.gameModule.templateId;
       if (!templateId) {
@@ -882,36 +1026,31 @@ export class GameModuleService {
         );
       }
 
-      const materializedFiles = await materializeTemplateFiles(templateId, asRecord(row.config));
+      if (row.files.length === 0) {
+        const materializedFiles = await materializeTemplateFiles(templateId, asRecord(row.config));
+        await this.seedVersionStarterFiles(row.id, storagePrefix, materializedFiles, author.userId);
+      } else {
+        const scriptFile = row.files.find((f) => f.relativePath === 'script.js');
+        if (scriptFile) {
+          const rawJs = (await this.r2Storage.getObjectText(scriptFile.asset.storagePath)) ?? '';
+          const cleanedJs = rawJs.replace(/^window\.__KABIRU_INITIAL_CONFIG__\s*=\s*.*?;\n?/, '');
+          const serializedConfig = JSON.stringify(asRecord(row.config))
+            .replace(/</g, '\\u003c')
+            .replace(/>/g, '\\u003e');
+          const snapshotJs = `window.__KABIRU_INITIAL_CONFIG__ = ${serializedConfig};\n${cleanedJs}`;
 
-      for (const mf of materializedFiles) {
-        const buffer = Buffer.from(mf.content, 'utf8');
-        const storagePath = `${storagePrefix}/${mf.relativePath}`;
-        const asset = await this.assetService.uploadAndUpsertAsset({
-          storagePath,
-          buffer,
-          mimeType: mf.mimeType,
-          uploadedBy: author.userId,
-        });
+          const updatedScriptAsset = await this.assetService.uploadAndUpsertAsset({
+            storagePath: `${storagePrefix}/script.js`,
+            buffer: Buffer.from(snapshotJs, 'utf8'),
+            mimeType: 'application/javascript; charset=utf-8',
+            uploadedBy: author.userId,
+          });
 
-        await this.prisma.gameModuleFile.upsert({
-          where: {
-            gameModuleVersionId_relativePath: {
-              gameModuleVersionId: row.id,
-              relativePath: mf.relativePath,
-            },
-          },
-          update: {
-            assetId: asset.id,
-            isEntrypoint: mf.isEntrypoint,
-          },
-          create: {
-            gameModuleVersionId: row.id,
-            assetId: asset.id,
-            relativePath: mf.relativePath,
-            isEntrypoint: mf.isEntrypoint,
-          },
-        });
+          await this.prisma.gameModuleFile.update({
+            where: { id: scriptFile.id },
+            data: { assetId: updatedScriptAsset.id },
+          });
+        }
       }
     }
 

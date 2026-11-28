@@ -1,3 +1,12 @@
+:root {
+  --kabiru-primary: #0284c7;
+  --kabiru-bg: #f8fafc;
+  --kabiru-surface: #ffffff;
+  --kabiru-text: #0f172a;
+  --kabiru-accent: #16a34a;
+  --kabiru-bg-image: none;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -6,93 +15,30 @@
 
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
+  background-color: var(--kabiru-bg);
+  background-image: var(--kabiru-bg-image);
+  background-size: cover;
+  background-position: center;
+  color: var(--kabiru-text);
+  min-height: 100vh;
   padding: 24px;
 }
 
-.game-container {
-  max-width: 640px;
-  margin: 0 auto;
-}
-
-.game-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.badge {
-  background: #e2e8f0;
-  color: #334155;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.score {
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 24px;
-}
-
-.question {
-  font-size: 18px;
-  line-height: 1.5;
-  margin-bottom: 20px;
-}
-
-.options-grid {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
+.game-container { max-width: 640px; margin: 0 auto; }
+.game-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.badge { background: #e2e8f0; color: #334155; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.score { font-weight: 700; font-size: 15px; }
+.card { background: var(--kabiru-surface); border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; }
+.question { font-size: 18px; line-height: 1.5; margin-bottom: 20px; }
+.options-grid { display: grid; gap: 10px; margin-bottom: 20px; }
 .option-btn {
-  text-align: left;
-  padding: 12px 16px;
-  border: 2px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
-  font-size: 15px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  text-align: left; padding: 12px 16px; border: 2px solid #cbd5e1; border-radius: 8px;
+  background: var(--kabiru-surface); color: var(--kabiru-text); font-size: 15px; cursor: pointer;
 }
-
-.option-btn.selected {
-  border-color: #0284c7;
-  background: #f0f9ff;
-}
-
-.feedback {
-  margin-bottom: 16px;
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  background: #f1f5f9;
-}
-
+.option-btn.selected { border-color: var(--kabiru-primary); background: color-mix(in srgb, var(--kabiru-primary) 10%, white); }
+.feedback { margin-bottom: 16px; padding: 12px; border-radius: 8px; font-size: 14px; background: #f1f5f9; }
 .btn-primary {
-  width: 100%;
-  padding: 12px 16px;
-  border: none;
-  border-radius: 8px;
-  background: #0284c7;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
+  width: 100%; padding: 12px 16px; border: none; border-radius: 8px;
+  background: var(--kabiru-primary); color: #ffffff; font-size: 15px; font-weight: 600; cursor: pointer;
 }
-
-.btn-primary:disabled {
-  background: #94a3b8;
-  cursor: not-allowed;
-}
+.btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }

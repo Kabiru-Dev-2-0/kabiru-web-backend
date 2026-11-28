@@ -12,6 +12,8 @@ import {
   VisibilityType,
 } from '@prisma/client';
 
+import { resolveTemplateStarterFiles } from '../src/game-module/templates/template-engine.registry';
+
 const prisma = new PrismaClient();
 
 export const SEED_IDS = {
@@ -507,22 +509,88 @@ async function main() {
     },
   ];
 
+  const sharedThemeSchema = {
+    type: 'object',
+    title: 'Tema Warna',
+    properties: {
+      primaryColor: { type: 'string', title: 'Warna Utama', default: '#0284C7', 'x-ui-widget': 'color' },
+      backgroundColor: { type: 'string', title: 'Warna Latar', default: '#F8FAFC', 'x-ui-widget': 'color' },
+      surfaceColor: { type: 'string', title: 'Warna Kartu', default: '#FFFFFF', 'x-ui-widget': 'color' },
+      textColor: { type: 'string', title: 'Warna Teks', default: '#0F172A', 'x-ui-widget': 'color' },
+      accentColor: { type: 'string', title: 'Warna Aksen', default: '#16A34A', 'x-ui-widget': 'color' },
+    },
+  };
+
+  const sharedAssetsSchema = {
+    type: 'object',
+    title: 'Aset Gambar & Audio',
+    properties: {
+      backgroundImage: { type: 'object', nullable: true, title: 'Gambar Latar', 'x-ui-widget': 'image-upload' },
+      bgmAudio: { type: 'object', nullable: true, title: 'Musik Latar (BGM)', 'x-ui-widget': 'audio-upload' },
+      correctSfx: { type: 'object', nullable: true, title: 'Suara Jawaban Benar', 'x-ui-widget': 'audio-upload' },
+      wrongSfx: { type: 'object', nullable: true, title: 'Suara Jawaban Salah', 'x-ui-widget': 'audio-upload' },
+    },
+  };
+
+  const sharedGameplaySchema = {
+    type: 'object',
+    title: 'Pengaturan Permainan',
+    properties: {
+      bgmVolume: { type: 'number', title: 'Volume Musik Latar (0 - 1)', minimum: 0, maximum: 1, default: 0.5 },
+      timeLimitSeconds: { type: 'integer', title: 'Batas Waktu (Detik)', minimum: 10, maximum: 600, default: 60 },
+    },
+  };
+
+  const defaultThemeConfig = {
+    primaryColor: '#0284C7',
+    backgroundColor: '#F8FAFC',
+    surfaceColor: '#FFFFFF',
+    textColor: '#0F172A',
+    accentColor: '#16A34A',
+  };
+
+  const defaultAssetsConfig = {
+    backgroundImage: null,
+    bgmAudio: null,
+    correctSfx: null,
+    wrongSfx: null,
+  };
+
   for (const tpl of gameTemplates) {
+    const starterFiles = await resolveTemplateStarterFiles(tpl.id);
+    const structuredSchema = {
+      type: 'object',
+      properties: {
+        theme: sharedThemeSchema,
+        assets: sharedAssetsSchema,
+        gameplay: sharedGameplaySchema,
+        content: tpl.configSchema,
+      },
+    };
+    const structuredDefaultConfig = {
+      theme: defaultThemeConfig,
+      assets: defaultAssetsConfig,
+      gameplay: { bgmVolume: 0.5, timeLimitSeconds: 60 },
+      content: tpl.defaultConfig,
+    };
+
     await prisma.gameTemplate.upsert({
       where: { id: tpl.id },
       update: {
         name: tpl.name,
         description: tpl.description,
-        configSchema: tpl.configSchema,
-        defaultConfig: tpl.defaultConfig,
+        configSchema: structuredSchema,
+        defaultConfig: structuredDefaultConfig,
+        starterFiles,
         isActive: true,
       },
       create: {
         id: tpl.id,
         name: tpl.name,
         description: tpl.description,
-        configSchema: tpl.configSchema,
-        defaultConfig: tpl.defaultConfig,
+        configSchema: structuredSchema,
+        defaultConfig: structuredDefaultConfig,
+        starterFiles,
         isActive: true,
       },
     });

@@ -9,6 +9,8 @@ import { BadgeProgressModule } from './badge/badge.module';
 import { RankModule } from './rank/rank.module';
 import { LeaderboardController } from './leaderboard/leaderboard.controller';
 import { LeaderboardService } from './leaderboard/leaderboard.service';
+import { SubmissionController } from './submission/submission.controller';
+import { SubmissionService } from './submission/submission.service';
 
 @Module({
   imports: [
@@ -20,7 +22,7 @@ import { LeaderboardService } from './leaderboard/leaderboard.service';
     BadgeProgressModule,
     RankModule,
   ],
-  controllers: [AppController, LeaderboardController],
-  providers: [LeaderboardService],
+  controllers: [AppController, LeaderboardController, SubmissionController],
+  providers: [LeaderboardService, SubmissionService],
 })
 export class AppModule {}

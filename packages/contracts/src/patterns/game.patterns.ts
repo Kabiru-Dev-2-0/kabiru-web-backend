@@ -15,6 +15,7 @@ export const GAME_PATTERNS = {
   VERSION_GET_DETAIL: 'game.version.getDetail',
   VERSION_UPDATE_CONFIG: 'game.version.updateConfig',
   VERSION_SAVE_CUSTOM_FILES: 'game.version.saveCustomFiles',
+  VERSION_RESET_TEMPLATE_FILES: 'game.version.resetTemplateFiles',
   VERSION_PUBLISH: 'game.version.publish',
 
   // Player Execution (LMS Runtime - Dimainkan Siswa)

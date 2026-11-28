@@ -163,7 +163,7 @@ export const UploadAssetSchema = z.object({
   mimeType: z.string().trim().min(1).max(100),
   content: z.string().min(1, 'Konten file tidak boleh kosong'),
   encoding: z.enum(['utf8', 'base64']).default('base64'),
-  folder: z.enum(['topics', 'materials', 'badges', 'general']).default('general'),
+  folder: z.enum(['topics', 'materials', 'badges', 'game-assets', 'general']).default('general'),
 });
 
 export const AssetIdParamSchema = z.object({

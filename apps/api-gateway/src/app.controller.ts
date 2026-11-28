@@ -24,6 +24,7 @@ import {
   DEVELOPER_AND_ADMIN_ROLES,
   GAME_PATTERNS,
   LEARNING_PATTERNS,
+  SubmitGameResultSchema,
   USER_PATTERNS,
   USER_ROLES,
   PROGRESS_PATTERNS,
@@ -863,8 +864,8 @@ export class AppController {
 
   @Post('game/modules')
   createGameModule(@Body() body: JsonBody, @Headers() headers: GatewayHeaders) {
-    const allowedRoles = body?.source === 'custom' ? DEVELOPER_AND_ADMIN_ROLES : AUTHORING_ROLES;
-    return this.learningWrite(headers, GAME_PATTERNS.MODULE_CREATE, body, allowedRoles);
+    // FR-20b: Guru, Developer, dan Admin dapat memilih jalur template maupun custom
+    return this.learningWrite(headers, GAME_PATTERNS.MODULE_CREATE, body, AUTHORING_ROLES);
   }
 
   @Get('game/modules/:moduleId')
@@ -923,7 +924,20 @@ export class AppController {
       headers,
       GAME_PATTERNS.VERSION_SAVE_CUSTOM_FILES,
       { ...body, versionId },
-      DEVELOPER_AND_ADMIN_ROLES,
+      AUTHORING_ROLES,
+    );
+  }
+
+  @Post('game/versions/:versionId/reset-template-files')
+  resetGameVersionTemplateFiles(
+    @Param('versionId') versionId: string,
+    @Headers() headers: GatewayHeaders,
+  ) {
+    return this.learningWrite(
+      headers,
+      GAME_PATTERNS.VERSION_RESET_TEMPLATE_FILES,
+      { versionId },
+      AUTHORING_ROLES,
     );
   }
 
@@ -1030,23 +1044,62 @@ export class AppController {
   // ==========================================
 
   /**
-   * progress-service belum punya handler 'progress.submission.create'.
-   * Sebelumnya request ini menggantung sampai timeout (504). Sekarang fail-fast 501 setelah autentikasi,
-   * sampai handler di progress-service diimplementasikan.
+   * POST /v1/progress/submissions
+   * Mengevaluasi hasil penyelesaian game kuis pada Materi (normalisasi skor bintang/poin -> 0..100),
+   * mencatat Submission + Score, serta mencairkan EXP berdasarkan MasteryRule CMS secara anti-farming.
    */
   @Post('progress/submissions')
-  async createSubmission(@Headers() headers: GatewayHeaders) {
-    await this.resolveActor(headers, false);
-    throw new HttpException(
-      {
+  async createSubmission(@Body() body: JsonBody, @Headers() headers: GatewayHeaders) {
+    const requestId = getRequestId(headers);
+    const actor = await this.resolveActor(headers, false);
+    if (!actor) {
+      throw new UnauthorizedException({
         error: {
-          code: 'NOT_IMPLEMENTED',
-          message: 'Endpoint submission belum tersedia di progress-service.',
+          code: 'UNAUTHENTICATED',
+          message: 'Login diperlukan untuk menyimpan hasil permainan.',
         },
-        meta: { requestId: getRequestId(headers) },
-      },
-      HttpStatus.NOT_IMPLEMENTED,
+        meta: { requestId },
+      });
+    }
+
+    const parsed = SubmitGameResultSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error.issues[0]?.message ?? 'Payload hasil permainan tidak valid.',
+          },
+          meta: { requestId },
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // 1. Verifikasi keberadaan soal/kuis di learning-service
+    const testMeta = await sendTo<{ id: string; points: number; maxAttempts: number | null }>(
+      this.learningClient,
+      LEARNING_PATTERNS.INTERNAL_TEST_GET_FOR_EVAL,
+      { testId: parsed.data.testId },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.learningRead,
     );
+
+    // 2. Normalisasi skor & cairkan EXP di progress-service (dikembalikan ke Host -> kabiru:result)
+    const submissionResult = await sendTo<unknown>(
+      this.progressClient,
+      PROGRESS_PATTERNS.SUBMISSION_CREATE,
+      {
+        ...parsed.data,
+        userId: actor.userId,
+        maxScore: 100,
+        testPoints: testMeta.points,
+      },
+      this.buildMeta(headers, actor),
+      RPC_TIMEOUTS.progressTransaction,
+    );
+
+    return formatSuccessResponse(requestId, submissionResult);
   }
 
     /**

@@ -117,6 +117,13 @@ export class GameModuleController {
     return this.gameModuleService.saveCustomFiles(data, actor);
   }
 
+  @MessagePattern(GAME_PATTERNS.VERSION_RESET_TEMPLATE_FILES)
+  resetTemplateFiles(@Payload() payload: unknown): Promise<GameModuleVersionDetailDto> {
+    const params = validateRpcData(GameVersionIdParamSchema, payload);
+    const actor = extractActor(payload);
+    return this.gameModuleService.resetTemplateFiles(params, actor);
+  }
+
   @MessagePattern(GAME_PATTERNS.VERSION_PUBLISH)
   publishVersion(@Payload() payload: unknown): Promise<GameModuleVersionDetailDto> {
     const data = validateRpcData(PublishGameVersionSchema, payload);

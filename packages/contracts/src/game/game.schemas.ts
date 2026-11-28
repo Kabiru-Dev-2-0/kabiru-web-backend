@@ -3,7 +3,26 @@ import { isWithinJsonByteLimit } from '../common/validation';
 import { UuidSchema } from '../learning/learning.schemas';
 
 export const MAX_GAME_CONFIG_BYTES = 64 * 1024; // 64 KB batas aman JSONB config
+export const MAX_GAME_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB per file gambar
+export const MAX_GAME_AUDIO_BYTES = 3 * 1024 * 1024; // 3 MB per file audio
 export const MAX_MODULE_VERSION_BYTES = 5 * 1024 * 1024; // 5 MB batas total file per versi modul
+
+export const HexColorSchema = z
+  .string()
+  .trim()
+  .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, 'Format warna wajib Hex valid (contoh: #0284C7)');
+
+export const GameAssetRefSchema = z
+  .object({
+    assetId: UuidSchema,
+    url: z.string().url().optional(),
+  })
+  .nullable()
+  .optional();
+
+export const GameThemeConfigSchema = z
+  .record(z.string(), HexColorSchema)
+  .optional();
 
 export const ModuleSourceSchema = z.enum(['template', 'custom']);
 export const VersionStatusSchema = z.enum(['draft', 'published', 'archived']);
@@ -67,6 +86,7 @@ export const ManifestSchema = z
       })
       .default({ html: 'index.html', css: 'style.css', js: 'script.js' }),
     max_score: z.number().int().positive().max(1000).default(100),
+    custom_result_screen: z.boolean().default(false),
     config_schema: z.record(z.string(), z.unknown()).optional(),
   })
   .refine((m) => (m.source === 'template') === Boolean(m.template_id), {
@@ -200,6 +220,23 @@ export const GetGamePlayerPayloadSchema = z.object({
   versionId: UuidSchema,
 });
 
+export const SubmitGameResultSchema = z
+  .object({
+    testId: UuidSchema,
+    score: z.number().finite().min(0).max(1000).optional(),
+    rawScore: z.number().finite().min(0).optional(),
+    rawMax: z.number().finite().positive('rawMax harus lebih besar dari 0').optional(),
+    unit: z.string().trim().max(30).optional(),
+    hintsUsed: z.number().int().min(0).max(10).default(0),
+    durationSeconds: z.number().int().min(0).max(86_400).default(0),
+    answers: z.record(z.string(), z.unknown()).default({}),
+  })
+  .refine(
+    (d) => d.score !== undefined || (d.rawScore !== undefined && d.rawMax !== undefined),
+    { message: 'Wajib menyertakan score atau pasangan (rawScore dan rawMax)' },
+  );
+
+export type SubmitGameResultDto = z.infer<typeof SubmitGameResultSchema>;
 // ==========================================
 // EXPORTED INFERRED INPUT TYPES
 // ==========================================

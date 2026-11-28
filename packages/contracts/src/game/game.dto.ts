@@ -14,7 +14,14 @@ export interface GameTemplateListItemDto {
   isActive: boolean;
 }
 
+export interface GameStarterFilesDto {
+  html: string;
+  css: string;
+  js: string;
+}
+
 export interface GameTemplateDetailDto extends GameTemplateListItemDto {
+  starterFiles: GameStarterFilesDto;
   createdAt: string;
 }
 
@@ -113,4 +120,20 @@ export interface GamePlayerPayloadDto {
     publicUrl: string;
     content?: string; // Entrypoint HTML/CSS/JS untuk perakitan srcdoc
   }>;
+}
+
+export interface GameSubmissionResultDto {
+  submissionId: string;
+  testId: string;
+  finalScore: number;
+  rawScore: number;
+  rawMax: number;
+  unit: string | null;
+  passed: boolean;
+  mastery: string;
+  expEarned: number;
+  totalExp: number | string;
+  currentLevel: { id: string; name: string; minExp: number } | null;
+  leveledUp: boolean;
+  isPreview: boolean;
 }
